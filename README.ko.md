@@ -1,5 +1,7 @@
 # Claude Orchestration
 
+**[English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md)**
+
 여러 Claude CLI 에이전트가 파일 기반 비동기 통신으로 게임을 함께 개발하는 오케스트레이션 프레임워크.
 
 bat 파일 하나로 전부 셋업됩니다. 에이전트들이 자율적으로 태스크를 가져가고, 기능을 구현하고, 코드를 리뷰하고, 보드를 관리합니다 — 전부 마크다운 파일을 통해 조율됩니다.
