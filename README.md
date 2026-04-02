@@ -1,5 +1,7 @@
 # Claude Orchestration
 
+**[한국어](README.ko.md)**
+
 Multiple Claude CLI agents collaborating on game development through file-based async communication.
 
 One bat file sets up everything. Agents autonomously pick up tasks, implement features, review code, and manage the project board — all coordinated through markdown files.
