@@ -1,6 +1,6 @@
 # Claude Orchestration
 
-**[English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md)**
+**[English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [ไทย](README.th.md) | [Tiếng Việt](README.vi.md)**
 
 Mehrere Claude-CLI-Agenten arbeiten gemeinsam an der Spieleentwicklung durch dateibasierte asynchrone Kommunikation.
 

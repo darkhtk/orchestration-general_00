@@ -1,6 +1,6 @@
 # Claude Orchestration
 
-**[English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md)**
+**[English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [ไทย](README.th.md) | [Tiếng Việt](README.vi.md)**
 
 여러 Claude CLI 에이전트가 파일 기반 비동기 통신으로 게임을 함께 개발하는 오케스트레이션 프레임워크.
 
