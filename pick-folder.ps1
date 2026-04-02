@@ -12,6 +12,12 @@ public class FolderPicker {
     static extern int CoCreateInstance(
         ref Guid clsid, IntPtr outer, uint ctx, ref Guid iid, out IntPtr ppv);
 
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr hWnd);
+
     public static string Pick(string title) {
         var clsid = new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7");
         var iid   = new Guid("42F85136-DB7E-439C-85F1-E4075D135FC8");
@@ -25,7 +31,9 @@ public class FolderPicker {
         dlg.SetOptions(opt | 0x20);  // FOS_PICKFOLDERS
         dlg.SetTitle(title);
 
-        if (dlg.Show(IntPtr.Zero) != 0) {
+        IntPtr owner = GetConsoleWindow();
+        SetForegroundWindow(owner);
+        if (dlg.Show(owner) != 0) {
             Marshal.Release(ptr);
             return "CANCELLED";
         }
@@ -78,5 +86,13 @@ public interface IShellItem {
     $f = New-Object System.Windows.Forms.FolderBrowserDialog
     $f.Description = "Select game project folder"
     $f.ShowNewFolderButton = $true
-    if ($f.ShowDialog() -eq "OK") { Write-Output $f.SelectedPath } else { Write-Output "CANCELLED" }
+    # Create a hidden topmost form as owner so the dialog appears in foreground
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true
+    $owner.StartPosition = 'Manual'
+    $owner.Location = New-Object System.Drawing.Point(-9999, -9999)
+    $owner.Show()
+    $owner.Hide()
+    if ($f.ShowDialog($owner) -eq "OK") { Write-Output $f.SelectedPath } else { Write-Output "CANCELLED" }
+    $owner.Dispose()
 }
