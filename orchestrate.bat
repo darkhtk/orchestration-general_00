@@ -114,9 +114,9 @@ REM ===========================================
 
 if exist "!PROJECT!\orchestration\project.config.md" (
     echo  ----------------------------------------
-    echo   Existing orchestration detected!
+    echo   Existing orchestration detected
     echo  ----------------------------------------
-    echo.
+    echo:
 
     REM  Extract info from config
     for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"모드"') do set "PREV_MODE=%%v"
@@ -124,11 +124,11 @@ if exist "!PROJECT!\orchestration\project.config.md" (
 
     echo   Mode:!PREV_MODE!
     echo   Direction:!PREV_DIR!
-    echo.
+    echo:
     echo   1^) Resume    - launch agents only
     echo   2^) Reconfigure - re-run setup
     echo   3^) Cancel
-    echo.
+    echo:
     set /p "ORCH_CHOICE=  Choice (1-3): "
 
     if "!ORCH_CHOICE!"=="1" goto :launch_agents
