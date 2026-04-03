@@ -715,7 +715,7 @@ for agent in "${AGENTS_TO_CREATE[@]}"; do
 # Set terminal title
 echo -ne "\\033]0;${agent}\\007"
 prompt=\$(cat "orchestration/prompts/${agent}.txt")
-exec claude -n "${agent}" "\$prompt"
+exec claude -p "\$prompt"
 RUNEOF
     chmod +x "$runner" 2>/dev/null
 done
