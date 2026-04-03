@@ -712,10 +712,30 @@ for agent in "${AGENTS_TO_CREATE[@]}"; do
     runner="$PROJECT_DIR/orchestration/.run_${agent}.sh"
     cat > "$runner" << RUNEOF
 #!/bin/bash
-# Set terminal title
 echo -ne "\\033]0;${agent}\\007"
-prompt=\$(cat "orchestration/prompts/${agent}.txt")
-exec claude -p "\$prompt"
+PROMPT_FILE="orchestration/prompts/${agent}.txt"
+
+# /loop Xm 첫 줄에서 인터벌 파싱 (기본 120초)
+INTERVAL=120
+FIRST_LINE=\$(head -1 "\$PROMPT_FILE")
+if echo "\$FIRST_LINE" | grep -q "^/loop"; then
+  MINS=\$(echo "\$FIRST_LINE" | sed 's|/loop \([0-9]*\)m.*|\1|')
+  [ -n "\$MINS" ] && INTERVAL=\$((MINS * 60))
+  REST_OF_FIRST=\$(echo "\$FIRST_LINE" | sed 's|^/loop [0-9]*[mM] *||')
+else
+  REST_OF_FIRST="\$FIRST_LINE"
+fi
+
+BODY=\$(tail -n +2 "\$PROMPT_FILE")
+PROMPT="\${REST_OF_FIRST}
+\${BODY}"
+
+while true; do
+  echo "=== [\$(date '+%H:%M:%S')] ${agent} ==="
+  claude -p "\$PROMPT"
+  echo ""
+  sleep \$INTERVAL
+done
 RUNEOF
     chmod +x "$runner" 2>/dev/null
 done
