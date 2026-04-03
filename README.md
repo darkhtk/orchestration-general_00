@@ -23,6 +23,23 @@ orchestrate.bat  (double-click)
   4 agents running in parallel, communicating via orchestration/
 ```
 
+## Framework Lifecycle
+
+The framework works best as a repeatable lifecycle instead of a one-time setup:
+
+1. `Preflight`
+   Prepare the target project so agents can read it safely and make good decisions.
+2. `Bootstrap`
+   Run `orchestrate.bat` to generate orchestration files, config, prompts, and runners.
+3. `Seed`
+   Populate initial work through feature extraction or manual backlog creation.
+4. `Operate`
+   Let agents work continuously through the board and review loop.
+5. `Control`
+   Use `FREEZE`, `DRAIN_FOR_TEST`, reconfiguration, and monitoring to steer the system safely.
+6. `Test`
+   Drain to a safe point, freeze, test manually, then resume.
+
 ## Agents
 
 | Agent | Role | What it does |
@@ -71,6 +88,26 @@ The interactive setup asks:
 | **Agent mode** | full (4) / lean (2) / solo (1) | full |
 | **Review level** | strict / standard / minimal | standard |
 | **Loop interval** | Stored in `project.config.md` as `Loop interval` | 2m |
+
+## Before You Start
+
+This framework works best when the target project already has a small amount of structure and documentation.
+
+Recommended minimum preparation:
+
+- `README.md`
+- `docs/current-state.md`
+- `docs/dev-priorities.md`
+- `docs/testing.md`
+
+Use [PRE-FLIGHT-CHECKLIST.md](/C:/sourcetree/Ochestration_general/PRE-FLIGHT-CHECKLIST.md) before enabling orchestration on an existing project.
+
+Reusable starter docs are included here:
+
+- [current-state.template.md](/C:/sourcetree/Ochestration_general/docs/templates/current-state.template.md)
+- [dev-priorities.template.md](/C:/sourcetree/Ochestration_general/docs/templates/dev-priorities.template.md)
+- [testing.template.md](/C:/sourcetree/Ochestration_general/docs/templates/testing.template.md)
+- [architecture.template.md](/C:/sourcetree/Ochestration_general/docs/templates/architecture.template.md)
 
 ## What Gets Created
 
