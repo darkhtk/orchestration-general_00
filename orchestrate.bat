@@ -150,10 +150,25 @@ if exist "!PROJECT!\orchestration\project.config.md" (
 )
 
 REM ===========================================
-REM  [1/3] Auto Setup
+REM  [0/4] Preflight
 REM ===========================================
 
-echo  [1/3] Setting up orchestration...
+echo  [0/4] Preparing project docs...
+echo.
+"!GITBASH!" "!TEMPLATE!\preflight-setup.sh" "!PROJECT!"
+
+if errorlevel 1 (
+    echo:
+    echo  [ERROR] Preflight setup failed.
+    pause
+    exit /b 1
+)
+
+REM ===========================================
+REM  [1/4] Auto Setup
+REM ===========================================
+
+echo  [1/4] Setting up orchestration...
 echo.
 "!GITBASH!" "!TEMPLATE!\auto-setup.sh" "!PROJECT!"
 
@@ -172,7 +187,7 @@ if not exist "!PROJECT!\orchestration\.run_DEVELOPER.sh" (
 )
 
 REM ===========================================
-REM  [2/3] Extract features + Seed backlog
+REM  [2/4] Extract features + Seed backlog
 REM ===========================================
 
 echo.
@@ -185,11 +200,11 @@ echo.
 set /p "SEED=  Choice (1/2): "
 if "!SEED!"=="1" (
     echo:
-    echo  [2/3a] Extracting feature list from code...
+    echo  [2/4a] Extracting feature list from code...
     echo:
     "!GITBASH!" "!TEMPLATE!\extract-features.sh" "!PROJECT!"
     echo:
-    echo  [2/3b] Generating tasks from features...
+    echo  [2/4b] Generating tasks from features...
     echo:
     "!GITBASH!" "!TEMPLATE!\seed-backlog.sh" "!PROJECT!"
     if errorlevel 1 (
@@ -220,14 +235,14 @@ if /i "!LAUNCH!"=="n" (
 :launch_agents
 
 REM ===========================================
-REM  Launch agents
+REM  [3/4] Launch agents
 REM ===========================================
 
 REM -- Detect which runners exist (matches agent mode) --
 set "AGENT_COUNT=0"
 
 echo.
-echo  [3/3] Launching agents...
+echo  [3/4] Launching agents...
 echo.
 
 for %%A in (SUPERVISOR DEVELOPER CLIENT COORDINATOR) do (

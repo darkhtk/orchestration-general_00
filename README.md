@@ -75,6 +75,23 @@ cd orchestration-general_00
 orchestrate.bat "C:\path\to\your\game"
 ```
 
+## Recommended Entry Point
+
+If you want the simplest operator workflow, start with:
+
+- [orchestration-tools.bat](/C:/sourcetree/Ochestration_general/orchestration-tools.bat)
+
+It acts as a hub for the common paths:
+
+- setup or resume orchestration
+- monitor orchestration status
+- manage `FREEZE` / `DRAIN_FOR_TEST`
+- prepare a test window
+- watch runtime errors
+- add a feature from text
+
+Use the individual `.bat` files directly only when you already know the exact action you want.
+
 ## Setup Options
 
 The interactive setup asks:
@@ -108,6 +125,15 @@ Reusable starter docs are included here:
 - [dev-priorities.template.md](/C:/sourcetree/Ochestration_general/docs/templates/dev-priorities.template.md)
 - [testing.template.md](/C:/sourcetree/Ochestration_general/docs/templates/testing.template.md)
 - [architecture.template.md](/C:/sourcetree/Ochestration_general/docs/templates/architecture.template.md)
+
+When you run `orchestrate.bat`, the framework now performs an automatic preflight scaffold first:
+
+- creates `docs/` if missing
+- adds `docs/PRE-FLIGHT-CHECKLIST.md`
+- adds `docs/current-state.md`, `docs/dev-priorities.md`, `docs/testing.md`, and `docs/architecture.md` if missing
+- adds a minimal `README.md` only if the project does not already have one
+
+Existing project files are never overwritten by this preflight step.
 
 ## What Gets Created
 
@@ -198,6 +224,7 @@ Runner scripts read `Loop interval` from config and fall back to `2m` if the key
 | `monitor-orchestration.bat` | Live dashboard for board state, agent health, latest review, and git activity |
 | `manage-orchestration.bat` | Add or remove FREEZE and DRAIN_FOR_TEST control flags, or open a quick monitor snapshot |
 | `test-orchestration.bat` | Prepare a test window by draining current work, freezing at a safe point, or entering test mode immediately |
+| `orchestration-tools.bat` | Single entry hub for setup, monitoring, control, testing, runtime monitoring, and feature intake |
 
 ## Key Mechanisms
 
@@ -242,6 +269,7 @@ Developer can auto-advance through tasks without waiting for supervisor. QA/bala
 
 ```
 orchestrate.bat          # Main entry point (setup + launch)
+orchestration-tools.bat  # Recommended operator hub for day-to-day use
 add-feature.bat          # Add feature by text description
 monitor.bat              # Runtime error monitoring
 pick-folder.ps1          # Modern folder picker dialog (IFileDialog COM)
@@ -251,8 +279,10 @@ launch.sh                # Cross-platform agent launcher
 extract-features.sh      # Analyze codebase -> FEATURES.md
 seed-backlog.sh          # FEATURES.md -> tasks + specs
 add-feature.sh           # Natural language -> tasks + specs
+preflight-setup.sh       # Generic preflight doc scaffold for target projects
 monitor.sh               # Editor.log watcher + error reporter
 project.config.md        # Blank config template
+docs/templates/          # Reusable preflight documentation templates
 framework/
   agents/                # Agent role definitions (4 files)
   prompts/               # Agent loop prompts (4 files)
