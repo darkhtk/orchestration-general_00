@@ -713,6 +713,7 @@ for agent in "${AGENTS_TO_CREATE[@]}"; do
     cat > "$runner" << RUNEOF
 #!/bin/bash
 echo -ne "\\033]0;${agent}\\007"
+cd "$PROJECT_DIR"
 PROMPT_FILE="orchestration/prompts/${agent}.txt"
 
 # /loop Xm 첫 줄에서 인터벌 파싱 (기본 120초)
