@@ -70,6 +70,7 @@ The interactive setup asks:
 | **Dev direction** | stabilize / feature / polish / content / custom | feature |
 | **Agent mode** | full (4) / lean (2) / solo (1) | full |
 | **Review level** | strict / standard / minimal | standard |
+| **Loop interval** | Stored in `project.config.md` as `Loop interval` | 2m |
 
 ## What Gets Created
 
@@ -134,6 +135,22 @@ If you run orchestrate.bat on a project that already has `orchestration/`, it de
   2) Reconfigure - re-run setup
   3) Cancel
 ```
+
+## Runtime Config
+
+`project.config.md` now includes ASCII-safe orchestration keys so scripts can parse settings reliably on Windows:
+
+```md
+## Runtime
+- Loop interval: 2m
+
+## Orchestration
+- Agent mode: full
+- Review level: standard
+- Dev direction: feature
+```
+
+Runner scripts read `Loop interval` from config and fall back to `2m` if the key is missing.
 
 ## Other Tools
 

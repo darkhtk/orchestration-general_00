@@ -118,9 +118,15 @@ if exist "!PROJECT!\orchestration\project.config.md" (
     echo  ----------------------------------------
     echo:
 
-    REM  Extract info from config
-    for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"모드"') do set "PREV_MODE=%%v"
-    for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"방향"') do set "PREV_DIR=%%v"
+    REM  Extract info from config using ASCII keys for encoding-safe parsing
+    set "PREV_MODE="
+    set "PREV_DIR="
+    for /f "tokens=2,* delims=:" %%a in ('findstr /b /c:"- Agent mode:" "!PROJECT!\orchestration\project.config.md" 2^>nul') do set "PREV_MODE=%%b"
+    for /f "tokens=2,* delims=:" %%a in ('findstr /b /c:"- Dev direction:" "!PROJECT!\orchestration\project.config.md" 2^>nul') do set "PREV_DIR=%%b"
+    if not defined PREV_MODE for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"모드"') do set "PREV_MODE=%%v"
+    if not defined PREV_DIR for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"방향"') do set "PREV_DIR=%%v"
+    if not defined PREV_MODE set "PREV_MODE= unknown"
+    if not defined PREV_DIR set "PREV_DIR= unknown"
 
     echo   Mode:!PREV_MODE!
     echo   Direction:!PREV_DIR!

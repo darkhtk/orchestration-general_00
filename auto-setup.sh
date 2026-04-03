@@ -442,6 +442,8 @@ if [ "$AGENT_MODE" != "solo" ]; then
 fi
 
 # --- 프로젝트명 fallback ---
+LOOP_INTERVAL="2m"
+
 if [ -z "$PROJECT_NAME" ]; then
     PROJECT_NAME=$(basename "$PROJECT_DIR")
 fi
@@ -488,6 +490,14 @@ cat > "$CONFIG_PATH" << CONFIGEOF
 ## Git
 - **Remote:** $GIT_REMOTE
 - **Branch:** $GIT_BRANCH
+
+## Runtime
+- Loop interval: $LOOP_INTERVAL
+
+## Orchestration
+- Agent mode: $AGENT_MODE
+- Review level: $REVIEW_LEVEL
+- Dev direction: $DEV_DIRECTION
 
 ## 디렉토리 매핑
 
@@ -561,10 +571,10 @@ cat > "$CONFIG_PATH" << CONFIGEOF
 - (프로젝트에 맞게 설정)
 
 ## 루프 간격
-- Supervisor: 2m
-- Developer: 2m
-- Client: 2m
-- Coordinator: 2m
+- Supervisor: $LOOP_INTERVAL
+- Developer: $LOOP_INTERVAL
+- Client: $LOOP_INTERVAL
+- Coordinator: $LOOP_INTERVAL
 
 ## 알림
 - **이메일 subject:** ${EMAIL_SUBJECT:-(프로젝트에 맞게 설정)}
@@ -714,28 +724,42 @@ for agent in "${AGENTS_TO_CREATE[@]}"; do
 #!/bin/bash
 echo -ne "\\033]0;${agent}\\007"
 cd "$PROJECT_DIR"
+CONFIG_FILE="orchestration/project.config.md"
 PROMPT_FILE="orchestration/prompts/${agent}.txt"
 
-# /loop Xm 첫 줄에서 인터벌 파싱 (기본 120초)
-INTERVAL=120
-FIRST_LINE=\$(head -1 "\$PROMPT_FILE")
-if echo "\$FIRST_LINE" | grep -q "^/loop"; then
-  MINS=\$(echo "\$FIRST_LINE" | sed 's|/loop \([0-9]*\)m.*|\1|')
-  [ -n "\$MINS" ] && INTERVAL=\$((MINS * 60))
-  REST_OF_FIRST=\$(echo "\$FIRST_LINE" | sed 's|^/loop [0-9]*[mM] *||')
-else
-  REST_OF_FIRST="\$FIRST_LINE"
+get_config_value() {
+  local key="\$1"
+  [ -f "\$CONFIG_FILE" ] || return 0
+  grep -m1 "^-[[:space:]]*\${key}:" "\$CONFIG_FILE" | sed "s/^-[[:space:]]*\${key}:[[:space:]]*//"
+}
+
+interval_to_seconds() {
+  local raw
+  raw=\$(echo "\$1" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+  case "\$raw" in
+    *h) echo \$(( \${raw%h} * 3600 )) ;;
+    *m) echo \$(( \${raw%m} * 60 )) ;;
+    *s) echo \$(( \${raw%s} )) ;;
+    *)  echo "\$raw" ;;
+  esac
+}
+
+INTERVAL_RAW=\$(get_config_value "Loop interval")
+[ -z "\$INTERVAL_RAW" ] && INTERVAL_RAW="2m"
+INTERVAL_SECONDS=\$(interval_to_seconds "\$INTERVAL_RAW")
+case "\$INTERVAL_SECONDS" in
+  ''|*[!0-9]*) INTERVAL_SECONDS=120 ;;
+esac
+if [ "\$INTERVAL_SECONDS" -le 0 ] 2>/dev/null; then
+  INTERVAL_SECONDS=120
 fi
 
-BODY=\$(tail -n +2 "\$PROMPT_FILE")
-PROMPT="\${REST_OF_FIRST}
-\${BODY}"
-
 while true; do
-  echo "=== [\$(date '+%H:%M:%S')] ${agent} ==="
+  PROMPT=\$(cat "\$PROMPT_FILE")
+  echo "=== [\$(date '+%H:%M:%S')] ${agent} loop start (interval: \$INTERVAL_RAW) ==="
   claude -p "\$PROMPT"
   echo ""
-  sleep \$INTERVAL
+  sleep "\$INTERVAL_SECONDS"
 done
 RUNEOF
     chmod +x "$runner" 2>/dev/null

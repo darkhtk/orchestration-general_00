@@ -12,6 +12,14 @@
 - **Remote:** (예: https://github.com/user/repo.git)
 - **Branch:** (예: master)
 
+## Runtime
+- Loop interval: 2m
+
+## Orchestration
+- Agent mode: full
+- Review level: standard
+- Dev direction: feature
+
 ## 디렉토리 매핑
 
 | 용도 | 경로 |
