@@ -158,11 +158,34 @@ Runner scripts read `Loop interval` from config and fall back to `2m` if the key
 |------|-------------|
 | `add-feature.bat` | Describe a feature in plain text -> auto-generates tasks + specs |
 | `monitor.bat` | Watch Unity/Godot editor logs for runtime errors, auto-create bug tasks |
+| `monitor-orchestration.bat` | Live dashboard for board state, agent health, latest review, and git activity |
+| `manage-orchestration.bat` | Add or remove FREEZE and DRAIN_FOR_TEST control flags, or open a quick monitor snapshot |
+| `test-orchestration.bat` | Prepare a test window by draining current work, freezing at a safe point, or entering test mode immediately |
 
 ## Key Mechanisms
 
 ### FREEZE
 Add a FREEZE notice to top of BOARD.md -> all agents stop immediately. Remove it to resume.
+
+### DRAIN_FOR_TEST
+Add a DRAIN_FOR_TEST notice to let agents finish the current task at a safe checkpoint, update BOARD/logs, and stop picking new work. This is the recommended way to prepare a temporary manual test window.
+
+## Operations Workflow
+
+Recommended operational flow for changing direction, patching orchestration, or preparing a manual test window:
+
+1. Use `manage-orchestration.bat` to set `FREEZE` or `DRAIN_FOR_TEST`.
+2. Watch progress with `monitor-orchestration.bat` until the system reaches a safe point.
+3. Apply your patch or run `orchestrate.bat` -> `Reconfigure`.
+4. Review `project.config.md`, `BOARD.md`, and `BACKLOG_RESERVE.md`.
+5. Use `manage-orchestration.bat` to remove the control flag and resume.
+
+For short manual test windows, prefer:
+
+1. `test-orchestration.bat` -> `Enter drain for test`
+2. `test-orchestration.bat` -> `Watch until safe test point`
+3. Run your test while `FREEZE` is active
+4. `manage-orchestration.bat` -> `Unfreeze`
 
 ### Discussions
 Agents can open async debates in `discussions/`. Used for design decisions, priority changes, protocol improvements. All agents respond in their section, then supervisor concludes.

@@ -1,3 +1,8 @@
+## Control Flags
+Read `orchestration/BOARD.md` before acting.
+- If the board contains `FREEZE`, stop immediately and do not create new reviews.
+- If the board contains `DRAIN_FOR_TEST`, finish only the review already in progress, update BOARD/logs, then idle. Do not start a new review.
+
 너는 고객사 에이전트다. 아래 순서대로 확인하고 작업해라.
 
 ## 필수 참조

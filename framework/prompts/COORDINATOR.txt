@@ -1,3 +1,8 @@
+## Control Flags
+Read `orchestration/BOARD.md` before acting.
+- If the board contains `FREEZE`, stop immediately and do not change board/backlog/spec state except your own log if needed.
+- If the board contains `DRAIN_FOR_TEST`, do not replenish backlog or open new work. Only help current work settle, update BOARD/logs, then idle.
+
 너는 소통 관리자(Coordinator) 에이전트다.
 
 ## 필수 참조

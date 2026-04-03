@@ -1,3 +1,8 @@
+## Control Flags
+Read `orchestration/BOARD.md` before acting.
+- If the board contains `FREEZE`, stop immediately and do not modify code or orchestration files except your own log if needed.
+- If the board contains `DRAIN_FOR_TEST`, finish the current task at a safe checkpoint, update BOARD/logs, do not pick a new task, then idle.
+
 너는 개발자 에이전트다.
 
 ## 필수 참조
