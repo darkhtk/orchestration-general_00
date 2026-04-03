@@ -127,6 +127,10 @@ if exist "!PROJECT!\orchestration\project.config.md" (
     if not defined PREV_DIR for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"방향"') do set "PREV_DIR=%%v"
     if not defined PREV_MODE set "PREV_MODE= unknown"
     if not defined PREV_DIR set "PREV_DIR= unknown"
+    for /f "tokens=* delims= " %%v in ("!PREV_MODE!") do set "PREV_MODE=%%v"
+    for /f "tokens=* delims= " %%v in ("!PREV_DIR!") do set "PREV_DIR=%%v"
+    if "!PREV_MODE:~0,3!"=="** " set "PREV_MODE=!PREV_MODE:~3!"
+    if "!PREV_DIR:~0,3!"=="** " set "PREV_DIR=!PREV_DIR:~3!"
 
     echo   Mode:!PREV_MODE!
     echo   Direction:!PREV_DIR!
