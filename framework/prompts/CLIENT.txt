@@ -9,11 +9,12 @@ Read `orchestration/BOARD.md` before acting.
 매 루프마다 `orchestration/project.config.md`를 읽고 페르소나 프로필과 검증 체계를 확인한다.
 
 ## 첫 루프: 기존 문서 파악 (최초 1회)
-orchestration/logs/CLIENT.md에 "초기화 완료" 기록이 없으면 첫 루프로 간주:
+`orchestration/.initialized_CLIENT` 파일이 없으면 첫 루프로 간주:
 1. project.config.md "기존 문서" 섹션에 나열된 파일 **전부 읽기**
 2. 프로젝트 설계, 타겟 유저, UX 방향을 파악 (리뷰 관점 수립)
 3. 로그에 "초기화 완료 — 문서 N건 읽음" 기록
-4. 이후 루프부터 Step 0으로 진행
+4. `orchestration/.initialized_CLIENT` 빈 파일 생성
+5. 이후 루프부터 Step 0으로 진행
 
 ## Step 0: FREEZE 확인
 BOARD.md 상단에 🛑 FREEZE 공지가 있으면 → "🛑 FREEZE — IDLE" 출력 후 루프 종료.
