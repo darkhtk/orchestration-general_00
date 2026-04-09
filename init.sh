@@ -43,8 +43,9 @@ mkdir -p "$PROJECT_DIR/orchestration"/{agents,tasks,reviews,decisions,discussion
 echo "📄 에이전트 역할 정의 복사..."
 cp "$TEMPLATE_DIR/framework/agents/"*.md "$PROJECT_DIR/orchestration/agents/"
 
-echo "📝 프롬프트 복사..."
-cp "$TEMPLATE_DIR/framework/prompts/"*.txt "$PROJECT_DIR/orchestration/prompts/"
+echo "📝 프롬프트 동기화..."
+cp -f "$TEMPLATE_DIR/framework/prompts/"*.txt "$PROJECT_DIR/orchestration/prompts/"
+echo "  → 프레임워크 프롬프트 → 프로젝트 프롬프트 동기화 완료"
 
 echo "📋 템플릿 복사..."
 mkdir -p "$PROJECT_DIR/orchestration/templates"

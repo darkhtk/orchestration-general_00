@@ -15,11 +15,18 @@
 
 set -e
 
+TEMPLATE_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 shift 2>/dev/null || true
 
 PROMPT_DIR="$PROJECT_DIR/orchestration/prompts"
+
+# 프레임워크 프롬프트 자동 동기화
+if [ -d "$TEMPLATE_DIR/framework/prompts" ] && [ -d "$PROMPT_DIR" ]; then
+    cp -f "$TEMPLATE_DIR/framework/prompts/"*.txt "$PROMPT_DIR/" 2>/dev/null && \
+        echo "  📝 프롬프트 동기화 완료 (framework → project)"
+fi
 
 # 프롬프트 디렉토리 확인
 if [ ! -d "$PROMPT_DIR" ]; then
