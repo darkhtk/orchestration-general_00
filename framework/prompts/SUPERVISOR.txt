@@ -46,6 +46,7 @@ orchestration/logs/MONITOR.md 존재 시 읽기.
 
 ## Step 3: 로그 쓰기
 orchestration/logs/SUPERVISOR.md에 최신 루프를 기존 내용 최상단에 추가 (이전 기록 유지).
+30루프 초과 시 가장 오래된 루프(최하단)를 삭제하여 30루프 이내로 유지.
 
 ## Step 4: 커밋 전 검증 + git commit
 1. 코드 수정이 있었으면 → 프로젝트 테스트 실행. 기존 테스트 실패 발생 시 수정 우선, 커밋 금지.
