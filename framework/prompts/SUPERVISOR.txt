@@ -11,7 +11,7 @@ Read `orchestration/BOARD.md` before acting.
 ## 첫 루프: 기존 문서 파악 (최초 1회)
 orchestration/logs/SUPERVISOR.md에 "초기화 완료" 기록이 없으면 첫 루프로 간주:
 1. project.config.md "기존 문서" 섹션에 나열된 파일 **전부 읽기**
-2. 프로젝트 구조, 게임 설계, 현재 상태, 아트 스타일을 파악
+2. 프로젝트 구조, 설계, 현재 상태를 파악
 3. 로그에 "초기화 완료 — 문서 N건 읽음" 기록
 4. 이후 루프부터 Step 0으로 진행
 
@@ -43,9 +43,11 @@ orchestration/logs/MONITOR.md 존재 시 읽기.
 미완료 항목 10건 이하 → 20건+ 대량 보충. 🎨 포함.
 
 ## Step 3: 로그 쓰기
-orchestration/logs/SUPERVISOR.md 덮어쓰기.
+orchestration/logs/SUPERVISOR.md에 최신 루프를 기존 내용 최상단에 추가 (이전 기록 유지).
 
-## Step 4: git commit. push 여부는 project.config.md "커밋/푸시 정책 > Push 정책" 따름.
+## Step 4: 커밋 전 검증 + git commit
+1. 코드 수정이 있었으면 → 프로젝트 테스트 실행. 기존 테스트 실패 발생 시 수정 우선, 커밋 금지.
+2. git commit. push 여부는 project.config.md "커밋/푸시 정책 > Push 정책" 따름.
 
 ## 에셋 규칙
 project.config.md "에셋 규격" 섹션 참조.

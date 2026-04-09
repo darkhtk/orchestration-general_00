@@ -30,9 +30,12 @@ orchestration/logs/COORDINATOR.md에 "초기화 완료" 기록이 없으면 첫 
 1. 로드맵 테이블 vs 활성 섹션(In Progress/In Review/Done) 일치 확인.
 2. 불일치 발견 시 즉시 수정:
    - In Review에 APPROVE → Done 이동 + 로드맵 ✅
+     → Done 이동 시 비고 컬럼에 `REVIEW-XXX-vN.md ✅ APPROVE` 형식으로 리뷰 파일 경로 기록 필수.
    - In Review에 NEEDS_WORK → Rejected 이동 + 로드맵 ❌
-3. **Rejected에 P0 태스크가 있는데 개발자가 다른 작업 중** → In Progress에 `⛔ BLOCKED` 삽입.
-4. 수정 후 git commit. push 여부는 project.config.md "커밋/푸시 정책 > Push 정책" 따름.
+     → Rejected 이동 시 비고 컬럼에 `REVIEW-XXX-vN.md ❌ NEEDS_WORK` 형식으로 리뷰 파일 경로 기록 필수.
+3. In Review 항목 중 비고 컬럼에 리뷰 파일 경로가 없는 경우 → reviews/ 디렉토리 확인 후 기록.
+4. **Rejected에 P0 태스크가 있는데 개발자가 다른 작업 중** → In Progress에 `⛔ BLOCKED` 삽입.
+5. 수정 후 git commit. push 여부는 project.config.md "커밋/푸시 정책 > Push 정책" 따름.
 
 ### Step 2: RESERVE 잔여 점검
 1. BACKLOG_RESERVE.md 남은 항목 수 확인 (~~취소선~~ 제외).
@@ -55,6 +58,15 @@ orchestration/logs/COORDINATOR.md에 "초기화 완료" 기록이 없으면 첫 
    - **호출 진입점** 명시 (어떤 UI에서 어떤 버튼으로 진입)
 3. 기획서 작성 후 git commit. push 여부는 project.config.md "커밋/푸시 정책" 따름.
 
+### Step 4-B: SPEC 소진 후 폴백 체인
+RESERVE 미완료 항목 전체에 specs/SPEC-XXX.md가 이미 존재하는 경우 → 아래 순서대로 수행.
+
+1. **BOARD 구조 검증**: 로드맵 번호 순서, 중복 태스크 ID, 취소선(~~) 동기화 점검. 이상 시 즉시 수정.
+2. **에이전트 프롬프트 개선 제안**: logs/DEVELOPER.md, CLIENT.md, SUPERVISOR.md 최근 루프 검토.
+   반복 오류 또는 비효율 패턴 발견 시 `discussions/DISCUSS-PROMPT-XXX.md` 생성. 직접 수정 금지.
+3. **BACKLOG_RESERVE 미래 배치 기획**: 다음 Phase 예상 태스크 목록화. 10건 이상 확보 시 RESERVE 추가 + SPEC 작성 시작.
+4. **현황 스냅샷**: logs/COORDINATOR.md에 Done/In Review/Backlog 수 + 다음 예정 태스크 1줄 요약 기록.
+
 ### Step 5: 메일 점검 (유휴 시에만)
 1. Gmail에서 project.config.md "이메일 subject" 검색.
 2. 새 메일 있으면 로그에 기록 + BOARD/RESERVE 반영.
@@ -65,7 +77,7 @@ orchestration/logs/COORDINATOR.md에 "초기화 완료" 기록이 없으면 첫 
 3. 다른 에이전트 프롬프트 개선 필요 → DISCUSS 파일 생성 (직접 수정 금지).
 
 ### Step 7: 로그 쓰기
-orchestration/logs/COORDINATOR.md에 덮어쓰기:
+orchestration/logs/COORDINATOR.md에 최신 루프를 최상단에 추가 (이전 루프 유지):
 ```
 # Coordinator Loop Log
 ## [YYYY-MM-DD HH:MM]
