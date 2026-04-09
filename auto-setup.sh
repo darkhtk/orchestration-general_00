@@ -384,7 +384,7 @@ echo ""
 echo "  🎯 개발 방향"
 echo ""
 echo "    1) stabilize — 안정화 (버그 수정, 방어 코드, 테스트)"
-echo "    2) feature   — 기능 개발 (새 시스템, 게임 루프 확장)"
+echo "    2) feature   — 기능 개발 (새 시스템, 핵심 흐름 확장)"
 echo "    3) polish    — 폴리시 (UI/UX, 애니메이션, 사운드, QoL)"
 echo "    4) content   — 콘텐츠 확장 (레벨, 아이템, NPC, 스토리)"
 echo "    5) custom    — 직접 입력"
@@ -402,7 +402,7 @@ case "$DIRECTION_CHOICE" in
        read -p "    개발 방향 직접 입력: " CUSTOM_DIRECTION || true
        DEV_PRIORITY_TEXT="$CUSTOM_DIRECTION" ;;
     *) DEV_DIRECTION="feature"
-       DEV_PRIORITY_TEXT="핵심 게임 루프 > 시스템 깊이 > 콘텐츠. 기존 기능 개선과 신규 기능 병행." ;;
+       DEV_PRIORITY_TEXT="핵심 기능 > 시스템 깊이 > 콘텐츠. 기존 기능 개선과 신규 기능 병행." ;;
 esac
 echo "    → 방향: $DEV_DIRECTION"
 
@@ -588,7 +588,7 @@ $(if [ -n "$FEEDBACK_ITEMS" ]; then echo "$FEEDBACK_ITEMS"; else echo "- (감지
 ### 페르소나 1
 - **이름:** (설정 필요)
 - **아이콘:** 🎮
-- **역할:** 캐주얼 게이머
+- **역할:** 일반 사용자
 - **배경:** (프로젝트 타겟 유저 기반으로 설정)
 - **관점:** 직관성, 온보딩
 - **말투:** 솔직하고 짧음
@@ -597,8 +597,8 @@ $(if [ -n "$FEEDBACK_ITEMS" ]; then echo "$FEEDBACK_ITEMS"; else echo "- (감지
 ### 페르소나 2
 - **이름:** (설정 필요)
 - **아이콘:** ⚔️
-- **역할:** 코어 게이머
-- **배경:** (장르 경험 풍부)
+- **역할:** 전문 사용자
+- **배경:** (도메인 경험 풍부)
 - **관점:** 시스템 깊이, 밸런스
 - **말투:** 분석적
 - **주로 잡는 문제:** 시스템 깊이 부족, 밸런스
@@ -607,7 +607,7 @@ $(if [ -n "$FEEDBACK_ITEMS" ]; then echo "$FEEDBACK_ITEMS"; else echo "- (감지
 - **이름:** (설정 필요)
 - **아이콘:** 🎨
 - **역할:** UX/UI 디자이너
-- **배경:** 게임 UI 전문가
+- **배경:** UI 전문가
 - **관점:** 시각적 일관성, 접근성
 - **말투:** 전문적
 - **주로 잡는 문제:** UI 일관성, 피드백 부재
@@ -616,7 +616,7 @@ $(if [ -n "$FEEDBACK_ITEMS" ]; then echo "$FEEDBACK_ITEMS"; else echo "- (감지
 - **이름:** (설정 필요)
 - **아이콘:** 🔍
 - **역할:** QA 엔지니어
-- **배경:** 게임 QA 경험
+- **배경:** QA 경험
 - **관점:** 안정성, 예외 처리
 - **말투:** 체계적
 - **주로 잡는 문제:** 크래시, 경계값 버그
@@ -644,7 +644,7 @@ $(if [ -n "$FEEDBACK_ITEMS" ]; then echo "$FEEDBACK_ITEMS"; else echo "- (감지
   - 패널/화면 열기/닫기
   - 데이터 바인딩 정확성
 
-### 검증 4: 플레이 시나리오
+### 검증 4: 사용자 시나리오
 - **시나리오 목록:**
   - (프로젝트에 맞게 설정)
 
