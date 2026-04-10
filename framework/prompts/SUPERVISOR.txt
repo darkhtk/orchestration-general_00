@@ -32,6 +32,11 @@ orchestration/logs/MONITOR.md 존재 시 읽기.
 - UI Error 항목 → 원인 추적 + 수정
 - 수정 후 MONITOR.md에서 해당 항목 제거
 
+## Step 1.7: 아키텍처 체크리스트 (코드 수정 전 확인)
+코드 수정 시 아래 항목을 반드시 점검한다:
+- project.config.md "코드 아키텍처 규칙" 섹션의 모든 항목 준수 여부 확인
+- 특히: GitQueue 경유, EventBus 경유, 인코딩 정규화 적용 여부
+
 ## Step 2: 자동 행동 (🎨 없을 때)
 순서대로 순환. 에러 점검만 반복 = 프로토콜 위반.
 1. 에셋 선제 생성 — RESERVE 다음 5건 필요 에셋 미리 생성

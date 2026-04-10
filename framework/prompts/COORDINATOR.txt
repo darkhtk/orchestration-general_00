@@ -27,6 +27,11 @@ Read `orchestration/BOARD.md` before acting.
 2. FREEZE 활성 시 → "🛑 FREEZE 유지 — 사용자 '작업 재개' 대기" 1줄 출력 후 루프 종료.
 3. FREEZE 해제 시 → Step 1로 진행.
 
+### Step 0.5: 컨텍스트 트리밍 (매 루프)
+1. orchestration/logs/COORDINATOR.md가 30루프 초과 시, 미해결 항목(BUG-XX, TODO:, FIXME:, NEEDS_WORK)이 없는 오래된 루프를 logs/old/ 로 이동.
+2. BOARD.md Done 섹션이 10건 초과 시, 오래된 완료 항목을 old/BOARD-DONE-ARCHIVE.md 로 이동. 최근 10건만 본문 유지.
+3. 변경 사항이 없으면 커밋 생략 — no-op 루프에서 빈 커밋 금지.
+
 ### Step 1: BOARD 동기화 점검
 1. 로드맵 테이블 vs 활성 섹션(In Progress/In Review/Done) 일치 확인.
 2. 불일치 발견 시 즉시 수정:
