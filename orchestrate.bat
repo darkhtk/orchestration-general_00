@@ -96,7 +96,7 @@ for /f "delims=" %%i in ('powershell -NoProfile -ExecutionPolicy Bypass -File "!
 
 if "!PROJECT!"=="CANCELLED" (
     echo  Cancelled.
-    timeout /t 2 >nul
+    %SystemRoot%\System32\timeout.exe /t 2 >nul
     exit /b 0
 )
 if "!PROJECT!"=="" (
@@ -253,7 +253,7 @@ for %%A in (SUPERVISOR DEVELOPER CLIENT COORDINATOR) do (
             start "%%A" "!GITBASH!" "!PROJECT!\orchestration\.run_%%A.sh"
         )
         set /a AGENT_COUNT+=1
-        timeout /t 3 /nobreak >nul
+        %SystemRoot%\System32\timeout.exe /t 3 /nobreak >nul
     )
 )
 
