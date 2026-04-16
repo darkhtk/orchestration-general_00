@@ -12,9 +12,60 @@
 
 set -e
 
+# =============================================================================
+# 초기 의존성 및 유효성 검사
+# =============================================================================
+
+# 필수 명령어 체크
+check_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "❌ 오류: '$1' 명령어를 찾을 수 없습니다."
+        echo "   설치 후 다시 시도하세요."
+        exit 1
+    fi
+}
+
+# Claude CLI 체크
+echo "🔍 필수 의존성 확인..."
+check_command "claude"
+check_command "find"
+check_command "grep"
+
+# 템플릿 디렉토리 검증
 TEMPLATE_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="${1:-.}"
-PROJECT_DIR="$(cd "$PROJECT_DIR" 2>/dev/null && pwd)"
+if [ ! -d "$TEMPLATE_DIR/framework" ]; then
+    echo "❌ 오류: 템플릿 디렉토리에 framework/ 폴더가 없습니다."
+    echo "   경로: $TEMPLATE_DIR"
+    exit 1
+fi
+
+# 프로젝트 디렉토리 검증
+if [ -z "$1" ]; then
+    echo "❌ 오류: 프로젝트 디렉토리를 지정해주세요."
+    echo "사용법: bash auto-setup.sh /path/to/project"
+    exit 1
+fi
+
+PROJECT_DIR="${1}"
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "❌ 오류: 프로젝트 디렉토리가 존재하지 않습니다: $PROJECT_DIR"
+    exit 1
+fi
+
+# 프로젝트 디렉토리를 절대경로로 변환
+if ! PROJECT_DIR="$(cd "$PROJECT_DIR" 2>/dev/null && pwd)"; then
+    echo "❌ 오류: 프로젝트 디렉토리에 접근할 수 없습니다: $1"
+    echo "   권한을 확인해주세요."
+    exit 1
+fi
+
+# 쓰기 권한 체크
+if [ ! -w "$PROJECT_DIR" ]; then
+    echo "❌ 오류: 프로젝트 디렉토리에 쓰기 권한이 없습니다: $PROJECT_DIR"
+    exit 1
+fi
+
+echo "✅ 의존성 검사 완료"
 
 echo "============================================"
 echo " Claude Orchestration Auto-Setup"
@@ -470,8 +521,26 @@ fi
 # orchestration 디렉토리가 없으면 먼저 init.sh 실행
 if [ ! -d "$PROJECT_DIR/orchestration" ]; then
     echo "📁 orchestration/ 디렉토리 생성 중 (init.sh)..."
-    bash "$TEMPLATE_DIR/init.sh" "$PROJECT_DIR" "$PROJECT_NAME"
+    if [ ! -f "$TEMPLATE_DIR/init.sh" ]; then
+        echo "❌ 오류: init.sh 스크립트를 찾을 수 없습니다: $TEMPLATE_DIR/init.sh"
+        exit 1
+    fi
+    if ! bash "$TEMPLATE_DIR/init.sh" "$PROJECT_DIR" "$PROJECT_NAME"; then
+        echo "❌ 오류: init.sh 실행에 실패했습니다."
+        exit 1
+    fi
     echo ""
+fi
+
+# orchestration 디렉토리 존재 및 쓰기 권한 확인
+if [ ! -d "$PROJECT_DIR/orchestration" ]; then
+    echo "❌ 오류: orchestration 디렉토리 생성에 실패했습니다."
+    exit 1
+fi
+
+if [ ! -w "$PROJECT_DIR/orchestration" ]; then
+    echo "❌ 오류: orchestration 디렉토리에 쓰기 권한이 없습니다."
+    exit 1
 fi
 
 cat > "$CONFIG_PATH" << CONFIGEOF
@@ -670,6 +739,18 @@ $(if [ -n "$DOCS_LIST" ]; then echo "$DOCS_LIST"; else echo "- (감지된 문서
   - minimal: 리뷰 없음, 전부 자가진행
 CONFIGEOF
 
+# config 파일 생성 검증
+if [ ! -f "$CONFIG_PATH" ]; then
+    echo "❌ 오류: project.config.md 파일 생성에 실패했습니다."
+    echo "   경로: $CONFIG_PATH"
+    exit 1
+fi
+
+if [ ! -s "$CONFIG_PATH" ]; then
+    echo "❌ 오류: project.config.md 파일이 비어있습니다."
+    exit 1
+fi
+
 echo "  ✅ project.config.md 생성 완료"
 echo "     $CONFIG_PATH"
 
@@ -718,9 +799,20 @@ if [ "$AGENT_MODE" = "solo" ] && ! grep -q "통합 역할 (solo 모드)" "$PROJE
     echo "$SOLO_APPEND" >> "$PROJECT_DIR/orchestration/prompts/DEVELOPER.txt"
 fi
 
+# 필수 템플릿 파일 확인
+for agent in "${AGENTS_TO_CREATE[@]}"; do
+    prompt_template="$TEMPLATE_DIR/framework/agents/${agent}.md"
+    if [ ! -f "$prompt_template" ]; then
+        echo "❌ 오류: 에이전트 템플릿을 찾을 수 없습니다: $prompt_template"
+        exit 1
+    fi
+done
+
 for agent in "${AGENTS_TO_CREATE[@]}"; do
     runner="$PROJECT_DIR/orchestration/.run_${agent}.sh"
-    cat > "$runner" << RUNEOF
+
+    # runner 스크립트 생성
+    if ! cat > "$runner" << RUNEOF
 #!/bin/bash
 echo -ne "\\033]0;${agent}\\007"
 cd "$PROJECT_DIR"
@@ -762,7 +854,21 @@ while true; do
   sleep "\$INTERVAL_SECONDS"
 done
 RUNEOF
-    chmod +x "$runner" 2>/dev/null
+    then
+        echo "❌ 오류: runner 스크립트 생성에 실패했습니다: $runner"
+        exit 1
+    fi
+
+    # 실행 권한 설정
+    if ! chmod +x "$runner" 2>/dev/null; then
+        echo "❌ 경고: runner 스크립트에 실행 권한 설정 실패: $runner"
+    fi
+
+    # 생성 검증
+    if [ ! -f "$runner" ] || [ ! -s "$runner" ]; then
+        echo "❌ 오류: runner 스크립트 생성 검증 실패: $runner"
+        exit 1
+    fi
 done
 echo "  ✅ ${#AGENTS_TO_CREATE[@]}개 runner 생성: ${AGENTS_TO_CREATE[*]}"
 echo ""
