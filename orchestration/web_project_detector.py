@@ -8,6 +8,7 @@
 
 import os
 import json
+import re
 import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -39,6 +40,7 @@ class BuildTool(Enum):
     VITE = "vite"
     ROLLUP = "rollup"
     PARCEL = "parcel"
+    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -100,6 +102,10 @@ class WebProjectDetector:
                     has_typescript=False
                 )
 
+            # 타임아웃 체크 (파일 I/O 전)
+            if time.time() - start_time > self.timeout_seconds:
+                raise TimeoutError("웹 프로젝트 감지 시간 초과")
+
             # package.json 내용 파싱
             with open(package_json_path, 'r', encoding='utf-8') as f:
                 package_data = json.load(f)
@@ -109,11 +115,19 @@ class WebProjectDetector:
             dependencies.update(package_data.get('dependencies', {}))
             dependencies.update(package_data.get('devDependencies', {}))
 
+            # 타임아웃 체크 (의존성 분석 후)
+            if time.time() - start_time > self.timeout_seconds:
+                raise TimeoutError("웹 프로젝트 감지 시간 초과")
+
             # 프로젝트 타입 감지
             project_type = self._detect_project_type(project_path, dependencies)
 
             # 패키지 매니저 감지
             package_manager = self._detect_package_manager(project_path)
+
+            # 타임아웃 체크 (패키지 매니저 감지 후)
+            if time.time() - start_time > self.timeout_seconds:
+                raise TimeoutError("웹 프로젝트 감지 시간 초과")
 
             # TypeScript 사용 여부 확인
             has_typescript = self._detect_typescript(project_path, dependencies)
@@ -123,6 +137,10 @@ class WebProjectDetector:
 
             # 빌드 도구 감지
             build_tool = self._detect_build_tool(project_path, dependencies)
+
+            # 타임아웃 체크 (빌드 도구 감지 후)
+            if time.time() - start_time > self.timeout_seconds:
+                raise TimeoutError("웹 프로젝트 감지 시간 초과")
 
             # 설정 파일 목록
             config_files = self._find_config_files(project_path, project_type)
@@ -140,8 +158,22 @@ class WebProjectDetector:
                 entry_points=entry_points
             )
 
+        except TimeoutError as e:
+            print(f"웹 프로젝트 감지 시간 초과: {e}")
+            return WebProjectInfo(
+                type=WebProjectType.UNKNOWN.value,
+                package_manager=PackageManager.UNKNOWN.value,
+                has_typescript=False
+            )
+        except (json.JSONDecodeError, FileNotFoundError, PermissionError) as e:
+            print(f"웹 프로젝트 감지 중 파일 처리 오류: {e}")
+            return WebProjectInfo(
+                type=WebProjectType.UNKNOWN.value,
+                package_manager=PackageManager.UNKNOWN.value,
+                has_typescript=False
+            )
         except Exception as e:
-            print(f"웹 프로젝트 감지 중 오류 발생: {e}")
+            print(f"웹 프로젝트 감지 중 예상치 못한 오류 발생: {e}")
             return WebProjectInfo(
                 type=WebProjectType.UNKNOWN.value,
                 package_manager=PackageManager.UNKNOWN.value,
@@ -222,9 +254,14 @@ class WebProjectDetector:
         if any(dep in dependencies for dep in ts_dependencies):
             return True
 
-        # .ts, .tsx 파일 존재 확인
-        ts_files = list(project_path.glob("**/*.ts")) + list(project_path.glob("**/*.tsx"))
-        return len(ts_files) > 0
+        # .ts, .tsx 파일 존재 확인 (성능 최적화: 첫 번째 발견 시 즉시 반환)
+        for ext in ["**/*.ts", "**/*.tsx"]:
+            try:
+                next(project_path.glob(ext))
+                return True
+            except StopIteration:
+                continue
+        return False
 
     def _get_framework_version(self, project_type: WebProjectType, dependencies: Dict[str, str]) -> Optional[str]:
         """프레임워크 버전 추출"""
@@ -239,7 +276,11 @@ class WebProjectDetector:
 
         framework_dep = framework_map.get(project_type)
         if framework_dep and framework_dep in dependencies:
-            return dependencies[framework_dep].lstrip('^~')
+            version = dependencies[framework_dep]
+            # semver 범위 지시자 제거 (^, ~, >=, > 등)
+            # 시작 부분의 버전 범위 지시자들을 제거
+            cleaned_version = re.sub(r'^[\^~>=<]+', '', version)
+            return cleaned_version
 
         return None
 
