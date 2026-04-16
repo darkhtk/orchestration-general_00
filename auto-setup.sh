@@ -16,6 +16,121 @@ TEMPLATE_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" 2>/dev/null && pwd)"
 
+# --- 웹 프로젝트 감지 함수들 ---
+detect_web_project() {
+    # package.json 체크
+    if [[ -f "$PROJECT_DIR/package.json" ]]; then
+        # Next.js 감지
+        if [[ -f "$PROJECT_DIR/next.config.js" || -f "$PROJECT_DIR/next.config.mjs" || -f "$PROJECT_DIR/next.config.ts" ]]; then
+            echo "web-nextjs"
+        # React 감지 (package.json에서 react dependency 확인)
+        elif grep -q '"react"' "$PROJECT_DIR/package.json"; then
+            echo "web-react"
+        # Vue 감지
+        elif grep -q '"vue"' "$PROJECT_DIR/package.json" || [[ -f "$PROJECT_DIR/vue.config.js" ]]; then
+            echo "web-vue"
+        # Angular 감지
+        elif [[ -f "$PROJECT_DIR/angular.json" ]]; then
+            echo "web-angular"
+        # Vite 프로젝트 감지
+        elif [[ -f "$PROJECT_DIR/vite.config.js" || -f "$PROJECT_DIR/vite.config.ts" ]]; then
+            echo "web-vite"
+        # 일반 Node.js 프로젝트
+        else
+            echo "web-nodejs"
+        fi
+        return 0
+    fi
+
+    return 1
+}
+
+detect_web_framework_version() {
+    local framework="$1"
+    case "$framework" in
+        web-nextjs)
+            if [[ -f "$PROJECT_DIR/package.json" ]]; then
+                grep '"next"' "$PROJECT_DIR/package.json" | sed 's/.*"next": *"\([^"]*\)".*/Next.js \1/' | head -1
+            else
+                echo "Next.js"
+            fi
+            ;;
+        web-react)
+            if [[ -f "$PROJECT_DIR/package.json" ]]; then
+                grep '"react"' "$PROJECT_DIR/package.json" | sed 's/.*"react": *"\([^"]*\)".*/React \1/' | head -1
+            else
+                echo "React"
+            fi
+            ;;
+        web-vue)
+            if [[ -f "$PROJECT_DIR/package.json" ]]; then
+                grep '"vue"' "$PROJECT_DIR/package.json" | sed 's/.*"vue": *"\([^"]*\)".*/Vue \1/' | head -1
+            else
+                echo "Vue"
+            fi
+            ;;
+        web-angular)
+            if [[ -f "$PROJECT_DIR/package.json" ]]; then
+                grep '"@angular/core"' "$PROJECT_DIR/package.json" | sed 's/.*"@angular\/core": *"\([^"]*\)".*/Angular \1/' | head -1
+            else
+                echo "Angular"
+            fi
+            ;;
+        web-vite)
+            echo "Vite"
+            ;;
+        *)
+            echo "Node.js"
+            ;;
+    esac
+}
+
+detect_web_language() {
+    if [[ -f "$PROJECT_DIR/tsconfig.json" ]]; then
+        echo "TypeScript"
+    else
+        echo "JavaScript"
+    fi
+}
+
+detect_build_tool() {
+    if [[ -f "$PROJECT_DIR/vite.config.js" || -f "$PROJECT_DIR/vite.config.ts" ]]; then
+        echo "Vite"
+    elif [[ -f "$PROJECT_DIR/webpack.config.js" ]]; then
+        echo "Webpack"
+    elif [[ -f "$PROJECT_DIR/package.json" ]]; then
+        if grep -q '"build".*"next build"' "$PROJECT_DIR/package.json"; then
+            echo "Next.js (내장)"
+        elif grep -q '"build".*"vue-cli-service"' "$PROJECT_DIR/package.json"; then
+            echo "Vue CLI"
+        elif grep -q '"build".*"ng build"' "$PROJECT_DIR/package.json"; then
+            echo "Angular CLI"
+        else
+            echo "npm scripts"
+        fi
+    else
+        echo "npm"
+    fi
+}
+
+detect_test_runner() {
+    if [[ -f "$PROJECT_DIR/jest.config.js" || -f "$PROJECT_DIR/jest.config.json" ]]; then
+        echo "Jest"
+    elif [[ -f "$PROJECT_DIR/vitest.config.js" || -f "$PROJECT_DIR/vitest.config.ts" ]]; then
+        echo "Vitest"
+    elif [[ -f "$PROJECT_DIR/playwright.config.js" || -f "$PROJECT_DIR/playwright.config.ts" ]]; then
+        echo "Playwright"
+    elif [[ -f "$PROJECT_DIR/cypress.config.js" ]]; then
+        echo "Cypress"
+    elif grep -q '"test".*"jest"' "$PROJECT_DIR/package.json" 2>/dev/null; then
+        echo "Jest"
+    elif grep -q '"test".*"vitest"' "$PROJECT_DIR/package.json" 2>/dev/null; then
+        echo "Vitest"
+    else
+        echo "None"
+    fi
+}
+
 # --- Python 프로젝트 감지 함수들 ---
 detect_python_project() {
     # requirements.txt 체크
@@ -156,6 +271,63 @@ if find "$PROJECT_DIR" -maxdepth 2 -name "*.uproject" -print -quit 2>/dev/null |
     echo "  ✅ 엔진: $ENGINE"
 fi
 
+# 웹 프로젝트
+if [ -z "$ENGINE" ]; then
+    WEB_TYPE=$(detect_web_project)
+    if [ $? -eq 0 ]; then
+        WEB_VERSION=$(detect_web_framework_version "$WEB_TYPE")
+        WEB_LANGUAGE=$(detect_web_language)
+        BUILD_TOOL=$(detect_build_tool)
+        TEST_RUNNER=$(detect_test_runner)
+        case "$WEB_TYPE" in
+            web-nextjs)
+                ENGINE="Web"
+                LANGUAGE="$WEB_LANGUAGE"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 프레임워크: $WEB_VERSION ($WEB_LANGUAGE, $BUILD_TOOL)"
+                ;;
+            web-react)
+                ENGINE="Web"
+                LANGUAGE="$WEB_LANGUAGE"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 프레임워크: $WEB_VERSION ($WEB_LANGUAGE, $BUILD_TOOL)"
+                ;;
+            web-vue)
+                ENGINE="Web"
+                LANGUAGE="$WEB_LANGUAGE"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 프레임워크: $WEB_VERSION ($WEB_LANGUAGE, $BUILD_TOOL)"
+                ;;
+            web-angular)
+                ENGINE="Web"
+                LANGUAGE="$WEB_LANGUAGE"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 프레임워크: $WEB_VERSION ($WEB_LANGUAGE, $BUILD_TOOL)"
+                ;;
+            web-vite)
+                ENGINE="Web"
+                LANGUAGE="$WEB_LANGUAGE"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 빌드도구: Vite ($WEB_LANGUAGE)"
+                ;;
+            web-nodejs)
+                ENGINE="Web"
+                LANGUAGE="$WEB_LANGUAGE"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 플랫폼: Node.js ($WEB_LANGUAGE, $BUILD_TOOL)"
+                ;;
+        esac
+        ERROR_LOG_PATH="브라우저 콘솔 / Node stderr"
+        ENGINE_VERSION="$WEB_VERSION"
+    fi
+fi
+
 # Python 프로젝트
 if [ -z "$ENGINE" ]; then
     PYTHON_TYPE=$(detect_python_project)
@@ -232,6 +404,61 @@ if [[ "$ENGINE" == Godot* ]]; then
     ASSET_AUDIO_DIR=$(find "$PROJECT_DIR" -maxdepth 3 -type d \( -name "audio" -o -name "sfx" -o -name "music" \) -print -quit 2>/dev/null)
     SCENE_DIR=$(find "$PROJECT_DIR" -maxdepth 3 -type d -name "scenes" -print -quit 2>/dev/null)
     TEST_DIR=$(find "$PROJECT_DIR" -maxdepth 3 -type d \( -name "tests" -o -name "test" \) -print -quit 2>/dev/null)
+fi
+
+# 웹 프로젝트 구조
+if [[ "$ENGINE" == Web* ]]; then
+    # src 디렉토리 감지 (Next.js: pages/ 또는 app/, React: src/, 일반: src/)
+    if [[ -d "$PROJECT_DIR/src" ]]; then
+        SRC_DIR="$PROJECT_DIR/src"
+    elif [[ -d "$PROJECT_DIR/app" ]]; then
+        SRC_DIR="$PROJECT_DIR/app"
+    elif [[ -d "$PROJECT_DIR/pages" ]]; then
+        SRC_DIR="$PROJECT_DIR/pages"
+    else
+        SRC_DIR="$PROJECT_DIR"
+    fi
+
+    # public 또는 static 디렉토리 감지
+    if [[ -d "$PROJECT_DIR/public" ]]; then
+        ASSET_SPRITE_DIR="$PROJECT_DIR/public/images"
+        ASSET_AUDIO_DIR="$PROJECT_DIR/public/audio"
+        ASSET_RESOURCE_DIR="$PROJECT_DIR/public"
+    elif [[ -d "$PROJECT_DIR/static" ]]; then
+        ASSET_SPRITE_DIR="$PROJECT_DIR/static/images"
+        ASSET_AUDIO_DIR="$PROJECT_DIR/static/audio"
+        ASSET_RESOURCE_DIR="$PROJECT_DIR/static"
+    else
+        ASSET_SPRITE_DIR="$PROJECT_DIR/public"
+        ASSET_AUDIO_DIR="$PROJECT_DIR/public"
+        ASSET_RESOURCE_DIR="$PROJECT_DIR/public"
+    fi
+
+    # 테스트 디렉토리 감지
+    if [[ -d "$PROJECT_DIR/__tests__" ]]; then
+        TEST_DIR="$PROJECT_DIR/__tests__"
+    elif [[ -d "$PROJECT_DIR/tests" ]]; then
+        TEST_DIR="$PROJECT_DIR/tests"
+    elif [[ -d "$PROJECT_DIR/test" ]]; then
+        TEST_DIR="$PROJECT_DIR/test"
+    elif [[ -d "$PROJECT_DIR/src/__tests__" ]]; then
+        TEST_DIR="$PROJECT_DIR/src/__tests__"
+    else
+        TEST_DIR="__tests__"
+    fi
+
+    # 페이지/컴포넌트 디렉토리 (웹에서는 "씬" 역할)
+    if [[ -d "$PROJECT_DIR/pages" ]]; then
+        SCENE_DIR="$PROJECT_DIR/pages"
+    elif [[ -d "$PROJECT_DIR/src/pages" ]]; then
+        SCENE_DIR="$PROJECT_DIR/src/pages"
+    elif [[ -d "$PROJECT_DIR/src/components" ]]; then
+        SCENE_DIR="$PROJECT_DIR/src/components"
+    elif [[ -d "$PROJECT_DIR/components" ]]; then
+        SCENE_DIR="$PROJECT_DIR/components"
+    else
+        SCENE_DIR="src/pages"
+    fi
 fi
 
 # Python 구조
@@ -615,9 +842,11 @@ cat > "$CONFIG_PATH" << CONFIGEOF
 
 ## 기본 정보
 - **프로젝트명:** $PROJECT_NAME
-- **엔진/프레임워크:** $ENGINE
+- **엔진/프레임워크:** ${ENGINE_VERSION:-$ENGINE}
 - **언어:** $LANGUAGE
 - **플랫폼:** $(if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [ -n "$WINDIR" ]; then echo "Windows"; elif [[ "$OSTYPE" == "darwin"* ]]; then echo "macOS"; else echo "Linux"; fi)
+$(if [[ "$ENGINE" == "Web"* ]] && [[ -n "$BUILD_TOOL" ]]; then echo "- **빌드도구:** $BUILD_TOOL"; fi)
+$(if [[ "$ENGINE" == "Web"* ]] && [[ -n "$TEST_RUNNER" && "$TEST_RUNNER" != "None" ]]; then echo "- **테스트러너:** $TEST_RUNNER"; fi)
 
 ## Git
 - **Remote:** $GIT_REMOTE
@@ -677,6 +906,8 @@ cat > "$CONFIG_PATH" << CONFIGEOF
 - **에러 로그 경로:** $ERROR_LOG_PATH
 - **에러 패턴:** "$ERROR_PATTERN"
 - **경고 패턴:** "$WARNING_PATTERN"
+$(if [[ "$ENGINE" == "Web"* ]]; then echo "- **빌드명령어:** \$(npm run build 또는 yarn build)"; fi)
+$(if [[ "$ENGINE" == "Web"* ]] && [[ "$TEST_RUNNER" != "None" ]]; then echo "- **테스트명령어:** \$(npm test 또는 yarn test)"; fi)
 
 ## 에셋 규격
 
