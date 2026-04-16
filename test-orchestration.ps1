@@ -111,15 +111,38 @@ switch ($choice) {
     }
     '2' {
         Write-Host 'Watching In Progress until it reaches 0. Press Ctrl+C to stop.' -ForegroundColor Yellow
+
+        # 성능 최적화: 이전 카운트를 저장하여 변경 시에만 출력
+        $lastCount = -1
+        $lastFileTime = $null
+
         while ($true) {
-            $count = Get-InProgressCount -BoardPath $boardPath
-            Write-Host ("[{0}] In Progress: {1}" -f (Get-Date -Format 'HH:mm:ss'), $count)
-            if ($count -le 0) {
-                Set-FreezeMarker -BoardPath $boardPath
-                Write-Host 'Safe test point reached. FREEZE marker added.' -ForegroundColor Green
-                break
+            # 성능 최적화: 파일이 변경되지 않았으면 카운트 재계산 건너뛰기
+            $currentFileTime = (Get-Item -LiteralPath $boardPath).LastWriteTime
+
+            if ($null -eq $lastFileTime -or $currentFileTime -ne $lastFileTime) {
+                $count = Get-InProgressCount -BoardPath $boardPath
+                $lastFileTime = $currentFileTime
+
+                # 카운트가 변경된 경우에만 출력 (스팸 방지)
+                if ($count -ne $lastCount) {
+                    Write-Host ("[{0}] In Progress: {1}" -f (Get-Date -Format 'HH:mm:ss'), $count)
+                    $lastCount = $count
+                }
+
+                if ($count -le 0) {
+                    Set-FreezeMarker -BoardPath $boardPath
+                    Write-Host 'Safe test point reached. FREEZE marker added.' -ForegroundColor Green
+                    break
+                }
             }
-            Start-Sleep -Seconds $RefreshSeconds
+
+            # 성능 최적화: 적응형 대기 시간 (변화가 없으면 대기 시간 증가)
+            if ($currentFileTime -eq $lastFileTime) {
+                Start-Sleep -Seconds ([Math]::Min($RefreshSeconds * 2, 30))  # 최대 30초
+            } else {
+                Start-Sleep -Seconds $RefreshSeconds
+            }
         }
     }
     '3' {
