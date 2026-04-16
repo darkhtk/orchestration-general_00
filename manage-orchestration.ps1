@@ -4,7 +4,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Resolve-ProjectPath {
+# Import common functions
+. $PSScriptRoot\common-orchestration-functions.ps1
+
+function Resolve-ProjectPath-Old {
     param([string]$ProvidedProject)
 
     if ($ProvidedProject) {
