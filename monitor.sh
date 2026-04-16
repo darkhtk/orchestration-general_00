@@ -226,62 +226,111 @@ echo "👁️  Watching for runtime errors... (Ctrl+C to stop)"
 echo ""
 
 LAST_SIZE=$(wc -c < "$LOG_FILE")
-ERROR_BUFFER=""
+ERROR_BUFFER_FILE=$(mktemp)
 CHECK_INTERVAL=5
+BUFFER_MAX_SIZE=10
+BUFFER_CURRENT_COUNT=0
+
+# cleanup 함수: 임시 파일 정리
+cleanup() {
+    [ -f "$ERROR_BUFFER_FILE" ] && rm -f "$ERROR_BUFFER_FILE"
+    exit 0
+}
+trap cleanup EXIT INT TERM
+
+# 메모리 효율적인 에러 카운팅
+count_lines_in_file() {
+    if [ -f "$1" ]; then
+        wc -l < "$1" | tr -d ' '
+    else
+        echo "0"
+    fi
+}
 
 while true; do
     CURRENT_SIZE=$(wc -c < "$LOG_FILE")
 
     if [ "$CURRENT_SIZE" -gt "$LAST_SIZE" ]; then
-        # 새로 추가된 부분만 읽기
-        NEW_CONTENT=$(tail -c +$((LAST_SIZE + 1)) "$LOG_FILE")
+        # 성능 최적화: 임시 파일에 새 내용 저장하여 메모리 사용량 감소
+        TEMP_NEW_CONTENT=$(mktemp)
+        tail -c +$((LAST_SIZE + 1)) "$LOG_FILE" > "$TEMP_NEW_CONTENT"
         LAST_SIZE=$CURRENT_SIZE
 
-        # 크리티컬 체크
-        CRITICAL=$(echo "$NEW_CONTENT" | grep -E "$PATTERNS_CRITICAL" || true)
-        if [ -n "$CRITICAL" ]; then
+        # 크리티컬 체크 - 임시 파일 사용
+        if grep -qE "$PATTERNS_CRITICAL" "$TEMP_NEW_CONTENT"; then
+            CRITICAL_TEMP=$(mktemp)
+            grep -E "$PATTERNS_CRITICAL" "$TEMP_NEW_CONTENT" > "$CRITICAL_TEMP"
+
             echo ""
-            echo "  🚨 CRITICAL: $CRITICAL"
+            echo "  🚨 CRITICAL: $(head -1 "$CRITICAL_TEMP")"
             echo "  $(date '+%H:%M:%S') — Writing to MONITOR.md"
 
-            # 리포트에 기록
-            echo "## 🚨 CRITICAL [$(date '+%H:%M:%S')]" >> "$REPORT"
-            echo '```' >> "$REPORT"
-            echo "$CRITICAL" >> "$REPORT"
-            echo '```' >> "$REPORT"
-            echo "" >> "$REPORT"
+            # 원자적 쓰기를 위한 임시 파일 사용
+            REPORT_TEMP=$(mktemp)
+            {
+                echo "## 🚨 CRITICAL [$(date '+%H:%M:%S')]"
+                echo '```'
+                cat "$CRITICAL_TEMP"
+                echo '```'
+                echo ""
+            } >> "$REPORT_TEMP"
+
+            # 원자적으로 리포트에 추가
+            cat "$REPORT_TEMP" >> "$REPORT"
+            rm -f "$CRITICAL_TEMP" "$REPORT_TEMP"
         fi
 
-        # 에러 체크
-        ERRORS=$(echo "$NEW_CONTENT" | grep -E "$PATTERNS_ERROR" || true)
-        if [ -n "$ERRORS" ]; then
-            ERROR_COUNT=$(echo "$ERRORS" | wc -l)
+        # 에러 체크 - 파일 기반 버퍼링으로 메모리 사용량 감소
+        ERROR_TEMP=$(mktemp)
+        if grep -E "$PATTERNS_ERROR" "$TEMP_NEW_CONTENT" > "$ERROR_TEMP"; then
+            ERROR_COUNT=$(count_lines_in_file "$ERROR_TEMP")
             echo "  ⚠️  $(date '+%H:%M:%S') — $ERROR_COUNT error(s) detected"
 
-            # 10건 이상 누적되면 리포트
-            ERROR_BUFFER="${ERROR_BUFFER}${ERRORS}"
-            BUFFER_COUNT=$(echo "$ERROR_BUFFER" | grep -c '.' 2>/dev/null || true)
-            if [ "$BUFFER_COUNT" -ge 10 ]; then
-                echo "  📝 $(date '+%H:%M:%S') — ${BUFFER_COUNT} errors buffered, writing report"
-                echo "## Errors [$(date '+%H:%M:%S')] — ${BUFFER_COUNT} total" >> "$REPORT"
-                echo '```' >> "$REPORT"
-                echo "$ERROR_BUFFER" | sort -u | tail -20 >> "$REPORT"
-                echo '```' >> "$REPORT"
-                echo "" >> "$REPORT"
-                ERROR_BUFFER=""
+            # 에러 버퍼에 추가 (파일 기반)
+            cat "$ERROR_TEMP" >> "$ERROR_BUFFER_FILE"
+            BUFFER_CURRENT_COUNT=$((BUFFER_CURRENT_COUNT + ERROR_COUNT))
+
+            # 버퍼가 임계치에 도달하면 리포트 생성
+            if [ "$BUFFER_CURRENT_COUNT" -ge "$BUFFER_MAX_SIZE" ]; then
+                echo "  📝 $(date '+%H:%M:%S') — ${BUFFER_CURRENT_COUNT} errors buffered, writing report"
+
+                # 중복 제거 및 상위 20개만 선택
+                UNIQUE_ERRORS=$(mktemp)
+                sort -u "$ERROR_BUFFER_FILE" | tail -20 > "$UNIQUE_ERRORS"
+
+                # 원자적 리포트 쓰기
+                REPORT_TEMP=$(mktemp)
+                {
+                    echo "## Errors [$(date '+%H:%M:%S')] — ${BUFFER_CURRENT_COUNT} total"
+                    echo '```'
+                    cat "$UNIQUE_ERRORS"
+                    echo '```'
+                    echo ""
+                } >> "$REPORT_TEMP"
+
+                cat "$REPORT_TEMP" >> "$REPORT"
+
+                # 버퍼 정리
+                rm -f "$UNIQUE_ERRORS" "$REPORT_TEMP"
+                > "$ERROR_BUFFER_FILE"  # 파일 내용만 비움 (파일 재생성 오버헤드 없음)
+                BUFFER_CURRENT_COUNT=0
             fi
         fi
+        rm -f "$ERROR_TEMP"
 
-        # UI 에러 체크
-        UI_ERRORS=$(echo "$NEW_CONTENT" | grep -E "$PATTERNS_ERROR" | grep -iE "$PATTERNS_UI" || true)
-        if [ -n "$UI_ERRORS" ]; then
-            echo "  🖼️  $(date '+%H:%M:%S') — UI error: $(echo "$UI_ERRORS" | head -1)"
+        # UI 에러 체크 - 파이프라인 최적화
+        UI_ERROR_FIRST=$(grep -E "$PATTERNS_ERROR" "$TEMP_NEW_CONTENT" | grep -iE "$PATTERNS_UI" | head -1 || true)
+        if [ -n "$UI_ERROR_FIRST" ]; then
+            echo "  🖼️  $(date '+%H:%M:%S') — UI error: $UI_ERROR_FIRST"
         fi
+
+        rm -f "$TEMP_NEW_CONTENT"
     elif [ "$CURRENT_SIZE" -lt "$LAST_SIZE" ]; then
         # 로그 파일이 리셋됨 (에디터 재시작)
         echo "  🔄 $(date '+%H:%M:%S') — Log file reset (editor restarted?)"
         LAST_SIZE=0
-        ERROR_BUFFER=""
+        > "$ERROR_BUFFER_FILE"  # 에러 버퍼 초기화
+        BUFFER_CURRENT_COUNT=0
     fi
 
     sleep $CHECK_INTERVAL

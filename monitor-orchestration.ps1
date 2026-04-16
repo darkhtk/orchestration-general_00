@@ -28,9 +28,20 @@ function Get-SectionRowCount {
         [string]$Keyword
     )
 
+    # 성능 최적화: 정규식을 미리 컴파일
+    $keywordPattern = [regex]::new("^## .*" + [regex]::Escape($Keyword), [System.Text.RegularExpressions.RegexOptions]::Compiled)
+    $sectionBreakPattern = [regex]::new('^## ', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+    $tableRowPattern = [regex]::new('^\|', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+    $skipPatterns = @(
+        [regex]::new('^\|\s*-', [System.Text.RegularExpressions.RegexOptions]::Compiled),
+        [regex]::new('^\|\s*#\s*\|', [System.Text.RegularExpressions.RegexOptions]::Compiled),
+        [regex]::new('^\|\s*Task\s*\|', [System.Text.RegularExpressions.RegexOptions]::Compiled),
+        [regex]::new('^\|\s*$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+    )
+
     $start = -1
     for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match '^## ' -and $Lines[$i] -match [regex]::Escape($Keyword)) {
+        if ($sectionBreakPattern.IsMatch($Lines[$i]) -and $keywordPattern.IsMatch($Lines[$i])) {
             $start = $i + 1
             break
         }
@@ -43,25 +54,25 @@ function Get-SectionRowCount {
     $count = 0
     for ($j = $start; $j -lt $Lines.Count; $j++) {
         $line = $Lines[$j]
-        if ($line -match '^## ') {
+        if ($sectionBreakPattern.IsMatch($line)) {
             break
         }
-        if ($line -notmatch '^\|') {
+        if (-not $tableRowPattern.IsMatch($line)) {
             continue
         }
-        if ($line -match '^\|\s*-') {
-            continue
+
+        # 성능 최적화: 모든 스킵 패턴을 한 번에 확인
+        $shouldSkip = $false
+        foreach ($pattern in $skipPatterns) {
+            if ($pattern.IsMatch($line)) {
+                $shouldSkip = $true
+                break
+            }
         }
-        if ($line -match '^\|\s*#\s*\|') {
-            continue
+
+        if (-not $shouldSkip) {
+            $count++
         }
-        if ($line -match '^\|\s*Task\s*\|') {
-            continue
-        }
-        if ($line -match '^\|\s*$') {
-            continue
-        }
-        $count++
     }
 
     return $count
@@ -158,7 +169,8 @@ function Get-DiscussionCount {
 function Get-GitSnapshot {
     param([string]$ProjectDir)
 
-    if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir '.git'))) {
+    $gitDir = Join-Path $ProjectDir '.git'
+    if (-not (Test-Path -LiteralPath $gitDir)) {
         return [pscustomobject]@{
             Branch = 'n/a'
             DirtyCount = 0
@@ -166,18 +178,57 @@ function Get-GitSnapshot {
         }
     }
 
-    $branch = (git -C $ProjectDir branch --show-current 2>$null)
-    if (-not $branch) {
-        $branch = 'detached'
-    }
+    # 성능 최적화: git 명령어들을 병렬로 실행
+    $gitJobs = @()
 
-    $statusLines = @(git -C $ProjectDir status --short 2>$null)
-    $commits = @(git -C $ProjectDir log --oneline -5 2>$null)
+    # Branch 정보를 가져오는 작업
+    $gitJobs += Start-Job -ScriptBlock {
+        param($ProjectDir)
+        $branch = (git -C $ProjectDir branch --show-current 2>$null)
+        if (-not $branch) {
+            $branch = 'detached'
+        }
+        return $branch.Trim()
+    } -ArgumentList $ProjectDir
 
-    return [pscustomobject]@{
-        Branch = $branch.Trim()
-        DirtyCount = $statusLines.Count
-        Commits = $commits
+    # Status 정보를 가져오는 작업
+    $gitJobs += Start-Job -ScriptBlock {
+        param($ProjectDir)
+        return @(git -C $ProjectDir status --short 2>$null).Count
+    } -ArgumentList $ProjectDir
+
+    # Commits 정보를 가져오는 작업
+    $gitJobs += Start-Job -ScriptBlock {
+        param($ProjectDir)
+        return @(git -C $ProjectDir log --oneline -5 2>$null)
+    } -ArgumentList $ProjectDir
+
+    # 모든 작업 완료 대기 (타임아웃: 5초)
+    $results = $gitJobs | Wait-Job -Timeout 5 | Receive-Job
+    $gitJobs | Remove-Job -Force
+
+    # 결과가 3개 모두 있는지 확인
+    if ($results.Count -ge 3) {
+        return [pscustomobject]@{
+            Branch = $results[0] ?? 'unknown'
+            DirtyCount = $results[1] ?? 0
+            Commits = $results[2] ?? @()
+        }
+    } else {
+        # 폴백: 순차 실행
+        $branch = (git -C $ProjectDir branch --show-current 2>$null)
+        if (-not $branch) {
+            $branch = 'detached'
+        }
+
+        $statusLines = @(git -C $ProjectDir status --short 2>$null)
+        $commits = @(git -C $ProjectDir log --oneline -5 2>$null)
+
+        return [pscustomobject]@{
+            Branch = $branch.Trim()
+            DirtyCount = $statusLines.Count
+            Commits = $commits
+        }
     }
 }
 
@@ -267,19 +318,123 @@ function Show-Dashboard {
     $boardText = $boardLines -join "`n"
     $freeze = $boardText -match 'FREEZE'
 
-    $board = @{
-        Rejected   = Get-SectionRowCount -Lines $boardLines -Keyword 'Rejected'
-        InProgress = Get-SectionRowCount -Lines $boardLines -Keyword 'In Progress'
-        InReview   = Get-SectionRowCount -Lines $boardLines -Keyword 'In Review'
-        Done       = Get-SectionRowCount -Lines $boardLines -Keyword 'Done'
-        Backlog    = Get-SectionRowCount -Lines $boardLines -Keyword 'Backlog'
+    # 성능 최적화: 보드 섹션 카운트를 병렬로 처리
+    $boardJobs = @()
+    $sectionNames = @('Rejected', 'In Progress', 'In Review', 'Done', 'Backlog')
+
+    foreach ($section in $sectionNames) {
+        $boardJobs += Start-Job -ScriptBlock {
+            param($Lines, $Keyword)
+            # Get-SectionRowCount 로직을 여기서 인라인으로 실행 (함수 호출 오버헤드 제거)
+            $keywordPattern = [regex]::new("^## .*" + [regex]::Escape($Keyword), [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            $sectionBreakPattern = [regex]::new('^## ', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            $tableRowPattern = [regex]::new('^\|', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            $skipPatterns = @(
+                [regex]::new('^\|\s*-', [System.Text.RegularExpressions.RegexOptions]::Compiled),
+                [regex]::new('^\|\s*#\s*\|', [System.Text.RegularExpressions.RegexOptions]::Compiled),
+                [regex]::new('^\|\s*Task\s*\|', [System.Text.RegularExpressions.RegexOptions]::Compiled),
+                [regex]::new('^\|\s*$', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            )
+
+            $start = -1
+            for ($i = 0; $i -lt $Lines.Count; $i++) {
+                if ($sectionBreakPattern.IsMatch($Lines[$i]) -and $keywordPattern.IsMatch($Lines[$i])) {
+                    $start = $i + 1
+                    break
+                }
+            }
+
+            if ($start -lt 0) {
+                return 0
+            }
+
+            $count = 0
+            for ($j = $start; $j -lt $Lines.Count; $j++) {
+                $line = $Lines[$j]
+                if ($sectionBreakPattern.IsMatch($line)) {
+                    break
+                }
+                if (-not $tableRowPattern.IsMatch($line)) {
+                    continue
+                }
+
+                $shouldSkip = $false
+                foreach ($pattern in $skipPatterns) {
+                    if ($pattern.IsMatch($line)) {
+                        $shouldSkip = $true
+                        break
+                    }
+                }
+
+                if (-not $shouldSkip) {
+                    $count++
+                }
+            }
+
+            return $count
+        } -ArgumentList $boardLines, $section
     }
 
+    # 모든 작업 완료 대기
+    $boardResults = $boardJobs | Wait-Job -Timeout 10 | Receive-Job
+    $boardJobs | Remove-Job -Force
+
+    # 보드 결과 매핑
+    $board = @{
+        Rejected   = if ($boardResults.Count -gt 0) { $boardResults[0] } else { 0 }
+        InProgress = if ($boardResults.Count -gt 1) { $boardResults[1] } else { 0 }
+        InReview   = if ($boardResults.Count -gt 2) { $boardResults[2] } else { 0 }
+        Done       = if ($boardResults.Count -gt 3) { $boardResults[3] } else { 0 }
+        Backlog    = if ($boardResults.Count -gt 4) { $boardResults[4] } else { 0 }
+    }
+
+    # 성능 최적화: 헬스 체크도 병렬로 처리
+    $healthJobs = @()
+    $agentNames = @('SUPERVISOR', 'DEVELOPER', 'CLIENT', 'COORDINATOR')
+
+    foreach ($agent in $agentNames) {
+        $logPath = Join-Path $logsDir "$agent.md"
+        $healthJobs += Start-Job -ScriptBlock {
+            param($Path, $Now)
+
+            if (-not (Test-Path -LiteralPath $Path)) {
+                return [pscustomobject]@{
+                    Exists = $false
+                    Status = 'missing'
+                    AgeMinutes = $null
+                    Timestamp = $null
+                }
+            }
+
+            $item = Get-Item -LiteralPath $Path
+            $age = [math]::Round(($Now - $item.LastWriteTime).TotalMinutes, 1)
+            $status = if ($age -le 5) {
+                'healthy'
+            } elseif ($age -le 15) {
+                'slow'
+            } else {
+                'stale'
+            }
+
+            return [pscustomobject]@{
+                Exists = $true
+                Status = $status
+                AgeMinutes = $age
+                Timestamp = $item.LastWriteTime
+            }
+        } -ArgumentList $logPath, $now
+    }
+
+    # 헬스 체크 결과 대기
+    $healthResults = $healthJobs | Wait-Job -Timeout 5 | Receive-Job
+    $healthJobs | Remove-Job -Force
+
+    # 헬스 결과 매핑
     $health = @{
-        SUPERVISOR  = Get-LogHealth -Path (Join-Path $logsDir 'SUPERVISOR.md') -Now $now
-        DEVELOPER   = Get-LogHealth -Path (Join-Path $logsDir 'DEVELOPER.md') -Now $now
-        CLIENT      = Get-LogHealth -Path (Join-Path $logsDir 'CLIENT.md') -Now $now
-        COORDINATOR = Get-LogHealth -Path (Join-Path $logsDir 'COORDINATOR.md') -Now $now
+        SUPERVISOR  = if ($healthResults.Count -gt 0) { $healthResults[0] } else { @{Status='missing'} }
+        DEVELOPER   = if ($healthResults.Count -gt 1) { $healthResults[1] } else { @{Status='missing'} }
+        CLIENT      = if ($healthResults.Count -gt 2) { $healthResults[2] } else { @{Status='missing'} }
+        COORDINATOR = if ($healthResults.Count -gt 3) { $healthResults[3] } else { @{Status='missing'} }
     }
 
     $latestReview = Get-LatestReviewInfo -ReviewsDir $reviewsDir

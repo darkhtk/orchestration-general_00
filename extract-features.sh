@@ -152,10 +152,29 @@ Rules:
 - Write in Korean for descriptions
 - This will be used to auto-generate development tasks, so be specific"
 
-CLAUDE_OUTPUT=$(claude --print "$PROMPT" 2>/dev/null)
+# Claude CLI 호출을 위한 안전한 방법 시도
+CLAUDE_OUTPUT=""
+if command -v claude >/dev/null 2>&1; then
+    CLAUDE_OUTPUT=$(claude --print "$PROMPT" 2>/dev/null)
+elif command -v claude-cli >/dev/null 2>&1; then
+    CLAUDE_OUTPUT=$(claude-cli --print "$PROMPT" 2>/dev/null)
+else
+    echo "  [ERROR] Claude CLI가 설치되지 않았습니다."
+    echo "  Claude CLI를 설치하거나 수동으로 프롬프트를 처리해주세요."
+    echo ""
+    echo "=== 프롬프트 내용 ==="
+    echo "$PROMPT"
+    echo "==================="
+    exit 1
+fi
 
 if [ -z "$CLAUDE_OUTPUT" ]; then
-    echo "  [ERROR] Claude output is empty."
+    echo "  [ERROR] Claude 출력이 비어있습니다."
+    echo "  Claude CLI 설정을 확인하거나 수동으로 프롬프트를 처리해주세요."
+    echo ""
+    echo "=== 프롬프트 내용 ==="
+    echo "$PROMPT"
+    echo "==================="
     exit 1
 fi
 
