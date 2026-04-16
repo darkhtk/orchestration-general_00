@@ -16,6 +16,73 @@ TEMPLATE_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" 2>/dev/null && pwd)"
 
+# --- Python 프로젝트 감지 함수들 ---
+detect_python_project() {
+    # requirements.txt 체크
+    if [[ -f "$PROJECT_DIR/requirements.txt" ]]; then
+        if grep -qi "django" "$PROJECT_DIR/requirements.txt"; then
+            echo "python-django"
+        elif grep -qi "flask" "$PROJECT_DIR/requirements.txt"; then
+            echo "python-flask"
+        elif grep -qi "fastapi" "$PROJECT_DIR/requirements.txt"; then
+            echo "python-fastapi"
+        else
+            echo "python-general"
+        fi
+        return 0
+    fi
+
+    # pyproject.toml 체크
+    if [[ -f "$PROJECT_DIR/pyproject.toml" ]]; then
+        if grep -qi "django" "$PROJECT_DIR/pyproject.toml"; then
+            echo "python-django"
+        elif grep -qi "flask" "$PROJECT_DIR/pyproject.toml"; then
+            echo "python-flask"
+        elif grep -qi "fastapi" "$PROJECT_DIR/pyproject.toml"; then
+            echo "python-fastapi"
+        else
+            echo "python-general"
+        fi
+        return 0
+    fi
+
+    # manage.py 체크 (Django 특화)
+    if [[ -f "$PROJECT_DIR/manage.py" ]]; then
+        echo "python-django"
+        return 0
+    fi
+
+    # 기타 Python 파일들
+    if [[ -f "$PROJECT_DIR/setup.py" || -f "$PROJECT_DIR/Pipfile" || -f "$PROJECT_DIR/poetry.lock" || -f "$PROJECT_DIR/.python-version" ]]; then
+        echo "python-general"
+        return 0
+    fi
+
+    return 1
+}
+
+detect_python_version() {
+    if [[ -f "$PROJECT_DIR/.python-version" ]]; then
+        cat "$PROJECT_DIR/.python-version"
+    elif [[ -f "$PROJECT_DIR/pyproject.toml" ]] && grep -q "python" "$PROJECT_DIR/pyproject.toml"; then
+        grep "python" "$PROJECT_DIR/pyproject.toml" | head -1 | sed 's/.*python.*=.*"\([0-9.]*\)".*/\1/'
+    else
+        python3 --version 2>/dev/null | awk '{print $2}' || echo "3.9+"
+    fi
+}
+
+detect_package_manager() {
+    if [[ -f "$PROJECT_DIR/poetry.lock" ]]; then
+        echo "poetry"
+    elif [[ -f "$PROJECT_DIR/Pipfile" ]]; then
+        echo "pipenv"
+    elif [[ -f "$PROJECT_DIR/requirements.txt" ]]; then
+        echo "pip"
+    else
+        echo "pip"
+    fi
+}
+
 echo "============================================"
 echo " Claude Orchestration Auto-Setup"
 echo "============================================"
@@ -89,6 +156,46 @@ if find "$PROJECT_DIR" -maxdepth 2 -name "*.uproject" -print -quit 2>/dev/null |
     echo "  ✅ 엔진: $ENGINE"
 fi
 
+# Python 프로젝트
+if [ -z "$ENGINE" ]; then
+    PYTHON_TYPE=$(detect_python_project)
+    if [ $? -eq 0 ]; then
+        PYTHON_VERSION=$(detect_python_version)
+        PKG_MANAGER=$(detect_package_manager)
+        case "$PYTHON_TYPE" in
+            python-django)
+                ENGINE="Django"
+                LANGUAGE="Python $PYTHON_VERSION"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 프레임워크: Django (Python $PYTHON_VERSION, $PKG_MANAGER)"
+                ;;
+            python-flask)
+                ENGINE="Flask"
+                LANGUAGE="Python $PYTHON_VERSION"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 프레임워크: Flask (Python $PYTHON_VERSION, $PKG_MANAGER)"
+                ;;
+            python-fastapi)
+                ENGINE="FastAPI"
+                LANGUAGE="Python $PYTHON_VERSION"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 프레임워크: FastAPI (Python $PYTHON_VERSION, $PKG_MANAGER)"
+                ;;
+            python-general)
+                ENGINE="Python"
+                LANGUAGE="Python $PYTHON_VERSION"
+                ERROR_PATTERN="Error"
+                WARNING_PATTERN="Warning"
+                echo "  ✅ 언어: Python $PYTHON_VERSION ($PKG_MANAGER)"
+                ;;
+        esac
+        ERROR_LOG_PATH="stdout"
+    fi
+fi
+
 if [ -z "$ENGINE" ]; then
     echo "  ⚠️  엔진 자동 감지 실패 — project.config.md에서 수동 설정 필요"
     ENGINE="(수동 입력 필요)"
@@ -125,6 +232,31 @@ if [[ "$ENGINE" == Godot* ]]; then
     ASSET_AUDIO_DIR=$(find "$PROJECT_DIR" -maxdepth 3 -type d \( -name "audio" -o -name "sfx" -o -name "music" \) -print -quit 2>/dev/null)
     SCENE_DIR=$(find "$PROJECT_DIR" -maxdepth 3 -type d -name "scenes" -print -quit 2>/dev/null)
     TEST_DIR=$(find "$PROJECT_DIR" -maxdepth 3 -type d \( -name "tests" -o -name "test" \) -print -quit 2>/dev/null)
+fi
+
+# Python 구조
+if [[ "$ENGINE" == Django* ]] || [[ "$ENGINE" == Flask* ]] || [[ "$ENGINE" == FastAPI* ]] || [[ "$ENGINE" == Python* ]]; then
+    # Django 특화 구조
+    if [[ "$ENGINE" == Django* ]]; then
+        SRC_DIR=$(find "$PROJECT_DIR" -maxdepth 2 -type d -name "*" | grep -v "__pycache__" | head -1)
+        if [ -d "$PROJECT_DIR/static" ]; then
+            ASSET_SPRITE_DIR="$PROJECT_DIR/static/images"
+            ASSET_AUDIO_DIR="$PROJECT_DIR/static/audio"
+            ASSET_RESOURCE_DIR="$PROJECT_DIR/static"
+        fi
+    else
+        # Flask/FastAPI/일반 Python 구조
+        SRC_DIR=$(find "$PROJECT_DIR" -maxdepth 2 -type d \( -name "src" -o -name "app" -o -name "*" \) | grep -v "__pycache__" | grep -v ".git" | grep -v "venv" | grep -v ".venv" | head -1)
+        ASSET_SPRITE_DIR=$(find "$PROJECT_DIR" -maxdepth 3 -type d \( -name "static" -o -name "assets" \) -print -quit 2>/dev/null)
+        ASSET_AUDIO_DIR="$ASSET_SPRITE_DIR"
+        ASSET_RESOURCE_DIR="$ASSET_SPRITE_DIR"
+    fi
+
+    TEST_DIR=$(find "$PROJECT_DIR" -maxdepth 2 -type d \( -name "tests" -o -name "test" \) -print -quit 2>/dev/null)
+    if [ -z "$TEST_DIR" ]; then
+        TEST_DIR="tests/"
+    fi
+    SCENE_DIR="templates/"
 fi
 
 # 공통: tools 디렉토리
