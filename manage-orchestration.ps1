@@ -4,20 +4,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Resolve-ProjectPath {
-    param([string]$ProvidedProject)
+# Import common functions
+. $PSScriptRoot\common-orchestration-functions.ps1
 
-    if ($ProvidedProject) {
-        return (Resolve-Path -LiteralPath $ProvidedProject).Path
-    }
-
-    $picker = Join-Path $PSScriptRoot 'pick-folder.ps1'
-    $selected = & powershell -NoProfile -ExecutionPolicy Bypass -File $picker
-    if (-not $selected -or $selected -eq 'CANCELLED') {
-        return $null
-    }
-    return (Resolve-Path -LiteralPath $selected).Path
-}
+# 중복된 함수 제거됨 - common-orchestration-functions.ps1의 Resolve-ProjectPath 사용
 
 function Get-BoardPath {
     param([string]$ProjectDir)

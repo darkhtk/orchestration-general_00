@@ -220,7 +220,11 @@ ${FEATURE_CONTENT}
 Generate the BACKLOG_RESERVE.md content first, then all SPEC files. Be thorough - cover every feature mentioned. Output in the exact format specified above."
 
 # Claude 실행
-CLAUDE_OUTPUT=$(claude --print "$FULL_PROMPT" 2>/dev/null)
+# 임시 파일을 사용하여 셸 인젝션 방지
+TEMP_PROMPT=$(mktemp)
+printf '%s' "$FULL_PROMPT" > "$TEMP_PROMPT"
+CLAUDE_OUTPUT=$(claude --print @"$TEMP_PROMPT" 2>/dev/null)
+rm -f "$TEMP_PROMPT"
 
 if [ -z "$CLAUDE_OUTPUT" ]; then
     echo "  [ERROR] Claude output is empty. Check if claude CLI is available."

@@ -118,11 +118,12 @@ if exist "!PROJECT!\orchestration\project.config.md" (
     echo  ----------------------------------------
     echo:
 
-    REM  Extract info from config using ASCII keys for encoding-safe parsing
+    REM  Extract info from config using UTF-8 safe parsing
     set "PREV_MODE="
     set "PREV_DIR="
-    for /f "tokens=2,* delims=:" %%a in ('findstr /b /c:"- Agent mode:" "!PROJECT!\orchestration\project.config.md" 2^>nul') do set "PREV_MODE=%%b"
-    for /f "tokens=2,* delims=:" %%a in ('findstr /b /c:"- Dev direction:" "!PROJECT!\orchestration\project.config.md" 2^>nul') do set "PREV_DIR=%%b"
+    REM PowerShell로 UTF-8 파일 안전하게 읽기
+    for /f "delims=" %%a in ('powershell -NoProfile -Command "Get-Content '!PROJECT!\orchestration\project.config.md' -Encoding UTF8 | Where-Object {$_ -match '- Agent mode:'} | ForEach-Object {$_ -replace '^.*- Agent mode:\s*',''} | Select-Object -First 1"') do set "PREV_MODE=%%a"
+    for /f "delims=" %%a in ('powershell -NoProfile -Command "Get-Content '!PROJECT!\orchestration\project.config.md' -Encoding UTF8 | Where-Object {$_ -match '- Dev direction:'} | ForEach-Object {$_ -replace '^.*- Dev direction:\s*',''} | Select-Object -First 1"') do set "PREV_DIR=%%a"
     if not defined PREV_MODE for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"모드"') do set "PREV_MODE=%%v"
     if not defined PREV_DIR for /f "tokens=2 delims=:" %%v in ('findstr /c:"** " "!PROJECT!\orchestration\project.config.md" 2^>nul ^| findstr /c:"방향"') do set "PREV_DIR=%%v"
     if not defined PREV_MODE set "PREV_MODE= unknown"
