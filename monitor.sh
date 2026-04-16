@@ -130,6 +130,11 @@ if [ "$MODE" = "--analyze" ]; then
         grep -E "$PATTERNS_ERROR" "$LOG_FILE" | grep -iE "$PATTERNS_UI" | tail -15
     fi
 
+    # 기존 리포트 백업 및 크기 제한 (1MB 초과 시 압축)
+    if [ -f "$REPORT" ] && [ $(stat -c%s "$REPORT" 2>/dev/null || echo "0") -gt 1048576 ]; then
+        gzip -c "$REPORT" > "${REPORT}.$(date +%Y%m%d_%H%M%S).gz" 2>/dev/null || true
+    fi
+
     # 리포트 생성
     cat > "$REPORT" << REPORTEOF
 # Runtime Monitor Report
@@ -192,7 +197,11 @@ Generate BACKLOG entries to fix each error. Format:
 
 Output ONLY the ### entries, nothing else. Write in Korean."
 
-        BUG_TASKS=$(claude --print "$PROMPT" 2>/dev/null)
+        # 임시 파일을 사용하여 셸 인젝션 방지
+        TEMP_PROMPT=$(mktemp)
+        printf '%s' "$PROMPT" > "$TEMP_PROMPT"
+        BUG_TASKS=$(claude --print @"$TEMP_PROMPT" 2>/dev/null)
+        rm -f "$TEMP_PROMPT"
 
         if [ -n "$BUG_TASKS" ]; then
             echo "" >> "$BACKLOG"

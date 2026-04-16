@@ -290,8 +290,11 @@ function Start-ConflictMonitoring {
     Write-ConflictLog "에이전트 충돌 모니터링 시작: $ProjectPath" "INFO"
 
     $recoveryAttempts = @{}
+    $loopCount = 0
+    $MAX_LOOP_COUNT = 86400  # 24시간 (30초 간격 기준)
 
-    while ($true) {
+    while ($loopCount -lt $MAX_LOOP_COUNT) {
+        $loopCount++
         try {
             # 각 타입별 충돌 검사
             $allConflicts = @()
