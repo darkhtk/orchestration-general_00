@@ -133,6 +133,18 @@ for agent in "${AGENTS[@]}"; do
     launch_agent "$agent"
 done
 
+# 충돌 복구 시스템 시작 (에이전트가 2개 이상일 때)
+if [ "${#AGENTS[@]}" -gt 1 ]; then
+    echo "  🛡️  에이전트 충돌 복구 시스템 시작..."
+    if [ -f "$TEMPLATE_DIR/conflict-recovery.sh" ]; then
+        nohup bash "$TEMPLATE_DIR/conflict-recovery.sh" "$PROJECT_DIR" --monitor > "$PROJECT_DIR/orchestration/logs/RECOVERY.log" 2>&1 &
+        echo "    ✅ 백그라운드에서 실행 중 (PID: $!)"
+        echo "$!" > "$PROJECT_DIR/orchestration/.locks/recovery.pid"
+    else
+        echo "    ⚠️  conflict-recovery.sh를 찾을 수 없습니다"
+    fi
+fi
+
 echo ""
 echo "============================================"
 echo " ✅ ${#AGENTS[@]}개 에이전트 실행됨"
@@ -143,7 +155,13 @@ echo "    cat orchestration/logs/SUPERVISOR.md"
 echo "    cat orchestration/logs/DEVELOPER.md"
 echo "    cat orchestration/logs/CLIENT.md"
 echo "    cat orchestration/logs/COORDINATOR.md"
+if [ "${#AGENTS[@]}" -gt 1 ]; then
+    echo "    cat orchestration/logs/RECOVERY.md      # 충돌 복구 로그"
+fi
 echo ""
 echo "  중단: 각 터미널에서 Ctrl+C"
 echo "  전체 FREEZE: BOARD.md 상단에 '🛑 FREEZE' 추가"
+if [ "${#AGENTS[@]}" -gt 1 ]; then
+    echo "  충돌 체크: bash conflict-recovery.sh . --check"
+fi
 echo ""
