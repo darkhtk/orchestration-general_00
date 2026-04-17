@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.tmp/
+
+# Secrets / credentials — 실수 방어용
+.env
+.env.*
+*.env
+secrets/
+credentials*
+*.key
+*.pem
+*.p12
+.anthropic
+.openai
+
+# Launcher state (ORCH_LAUNCHER_STATE 가 홈 대신 repo 내부로 redirect 되는 경우 대비)
+.orch_engine/
+
+# 타겟 프로젝트에 엔진이 만들어내는 폴더. orch-engine 자체엔 생기지 않지만
+# 실수로 이 repo 루트를 타겟으로 init 하면 만들어질 수 있어 방어적으로 제외.
+.orch/
+
+# OS / shell
+*.log
+nohup.out
