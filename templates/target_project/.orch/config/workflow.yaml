@@ -1,0 +1,8 @@
+{
+  "workflow": {
+    "auto_start": false,
+    "allow_handoff": true,
+    "stop_on_approval_gate": true,
+    "human_review_mode": "cli"
+  }
+}

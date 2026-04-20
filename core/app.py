@@ -411,6 +411,7 @@ def run_cycle(args: argparse.Namespace) -> int:
     try:
         base_decision = _run_orchestrator(
             target_root=target_root,
+            runtime=runtime,
             roles_config=roles_config,
             task=task,
             functional_review=functional_review,
@@ -706,18 +707,35 @@ def _run_planner(
     completed = runtime.read_json("tasks/completed.json", [])
     completed_keys = _task_keys(completed)
     existing_backlog = runtime.read_json("tasks/backlog.json", [])
-    # Carry forward the still-open backlog, drop anything already completed,
-    # then append only new tasks that are neither already queued nor done.
-    backlog = _dedupe_tasks(
-        [task for task in existing_backlog if _task_key(task) not in completed_keys]
-    )
-    backlog_keys = _task_keys(backlog)
-    for task in tasks:
-        key = _task_key(task)
-        if not key or key in backlog_keys or key in completed_keys:
-            continue
-        backlog.append(task)
-        backlog_keys.add(key)
+    if previous_state == EngineState.ITERATING.value:
+        # Iterating: trust the planner's fresh plan. It has seen the
+        # orchestrator's previous judgment + verifier reviews and decided
+        # what to do next. Keeping stale backlog would bury the planner's
+        # response behind old tasks that often dedup to the same id/title
+        # (e.g. default "task-1" assigned by _normalize_role_payload) and
+        # stall the cycle on the prior task.
+        backlog = []
+        backlog_keys: set[str] = set()
+        for task in tasks:
+            key = _task_key(task)
+            if not key or key in completed_keys or key in backlog_keys:
+                continue
+            backlog.append(task)
+            backlog_keys.add(key)
+    else:
+        # Non-iterating (idle / completed): carry forward the still-open
+        # backlog, drop anything already completed, then append only new
+        # tasks that are neither already queued nor done.
+        backlog = _dedupe_tasks(
+            [task for task in existing_backlog if _task_key(task) not in completed_keys]
+        )
+        backlog_keys = _task_keys(backlog)
+        for task in tasks:
+            key = _task_key(task)
+            if not key or key in backlog_keys or key in completed_keys:
+                continue
+            backlog.append(task)
+            backlog_keys.add(key)
     runtime.write_json("tasks/backlog.json", backlog)
     active_task = backlog[0] if backlog else (tasks[0] if tasks else None)
     active_list = [active_task] if active_task else []
@@ -801,6 +819,19 @@ def _collect_previous_reviews(runtime: RuntimeStore) -> dict[str, object]:
             "summary": review.get("summary", ""),
             "findings": review.get("findings", []),
             "suggested_actions": review.get("suggested_actions", []),
+        }
+    # Orchestrator's last judgment (Phase 3.5) — closes the feedback loop so
+    # the next planner run sees decision reasoning + unresolved_items +
+    # recommended_next_action without the engine having to hand-write a hint.
+    orchestrator_review = runtime.read_json("reviews/orchestrator_latest.json", {})
+    if isinstance(orchestrator_review, dict) and orchestrator_review.get("decision"):
+        summary["orchestrator"] = {
+            "cycle": orchestrator_review.get("cycle"),
+            "decision": orchestrator_review.get("decision"),
+            "summary": orchestrator_review.get("summary", ""),
+            "reason": orchestrator_review.get("reason", ""),
+            "unresolved_items": orchestrator_review.get("unresolved_items", []),
+            "recommended_next_action": orchestrator_review.get("recommended_next_action", ""),
         }
     handoff_review = runtime.read_json("reviews/handoff_latest.json", {})
     if isinstance(handoff_review, dict) and handoff_review.get("result"):
@@ -1099,6 +1130,7 @@ _DECISION_TO_STATE = {
 def _run_orchestrator(
     *,
     target_root: Path,
+    runtime: RuntimeStore,
     roles_config: dict[str, object],
     task: dict[str, object],
     functional_review: dict[str, object],
@@ -1146,13 +1178,29 @@ def _run_orchestrator(
     # authoritative field for downstream routing.
     if next_state != expected_state:
         next_state = expected_state
-    return {
+    normalized = {
         "decision": decision,
         "next_state": next_state,
         "reason": str(payload.get("reason") or ""),
         "unresolved_items": [str(item) for item in (payload.get("unresolved_items") or [])],
         "recommended_next_action": str(payload.get("recommended_next_action") or ""),
     }
+    # Persist the judgment so the next iterating planner sees it via
+    # previous_reviews.orchestrator — this closes the feedback loop
+    # (verifier -> orchestrator -> planner) without resurrecting the
+    # removed iteration_hint. Cleared on complete_cycle in _finalize_cycle.
+    runtime.write_json(
+        "reviews/orchestrator_latest.json",
+        {
+            "cycle": cycle_index,
+            "decision": decision,
+            "reason": normalized["reason"],
+            "unresolved_items": normalized["unresolved_items"],
+            "recommended_next_action": normalized["recommended_next_action"],
+            "summary": str(payload.get("summary") or ""),
+        },
+    )
+    return normalized
 
 
 def _finalize_cycle(
@@ -1190,6 +1238,11 @@ def _finalize_cycle(
         # actually closes.)
         if runtime.read_json("reviews/handoff_latest.json", {}):
             runtime.write_json("reviews/handoff_latest.json", {})
+        # Same invariant for the orchestrator's judgment: when the cycle is
+        # actually complete, the next planner run should not be biased by the
+        # prior cycle's unresolved_items or recommended_next_action.
+        if runtime.read_json("reviews/orchestrator_latest.json", {}):
+            runtime.write_json("reviews/orchestrator_latest.json", {})
 
     runtime.write_json("tasks/completed.json", completed)
     runtime.write_json("tasks/backlog.json", backlog)
