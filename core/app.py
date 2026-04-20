@@ -41,6 +41,18 @@ def parse_args() -> argparse.Namespace:
     init_parser.add_argument("--mode", default="greenfield", help="Run mode")
     init_parser.add_argument("--project-name", default="", help="Optional project name")
     init_parser.add_argument("--goal-summary", default="", help="Optional initial goal")
+    init_parser.add_argument(
+        "--max-cycles",
+        type=int,
+        default=None,
+        help="Safety cap for iteration cycles. 0 disables the cap. Overrides .orch/config/limits.yaml.",
+    )
+    init_parser.add_argument(
+        "--stop-on-stagnation",
+        choices=("true", "false"),
+        default=None,
+        help="Hard stop when two consecutive needs_iteration cycles fail to improve scores.",
+    )
     init_parser.set_defaults(func=run_init)
 
     status_parser = subparsers.add_parser("status", help="show target runtime status")
@@ -135,6 +147,24 @@ def run_init(args: argparse.Namespace) -> int:
         orch_root / "config" / "domain.yaml",
         {"domain": {"selected": args.domain, "calibrated": False}},
     )
+
+    # Override the template limits.yaml when the user supplied --max-cycles or
+    # --stop-on-stagnation. Preserves other fields (token_preflight etc.).
+    overrides_provided = getattr(args, "max_cycles", None) is not None or getattr(
+        args, "stop_on_stagnation", None
+    ) is not None
+    if overrides_provided:
+        limits_path = orch_root / "config" / "limits.yaml"
+        limits_doc = _read_yaml(limits_path)
+        limits_section = limits_doc.get("limits", {}) if isinstance(limits_doc, dict) else {}
+        if not isinstance(limits_section, dict):
+            limits_section = {}
+        if getattr(args, "max_cycles", None) is not None:
+            limits_section["max_cycles"] = max(0, int(args.max_cycles))
+        if getattr(args, "stop_on_stagnation", None) is not None:
+            limits_section["stop_on_stagnation"] = args.stop_on_stagnation == "true"
+        limits_doc["limits"] = limits_section
+        _write_yaml(limits_path, limits_doc)
 
     runtime = RuntimeStore(target_root)
     runtime.write_json(
@@ -378,7 +408,22 @@ def run_cycle(args: argparse.Namespace) -> int:
     refreshed_session = runtime.read_json("runtime/session.json", {})
     score_history = _score_history(refreshed_session)
     handoff_pause_count = int(refreshed_session.get("handoff_pause_count", 0) or 0)
-    base_decision = _orchestrator_decision(common_policy, functional_review, human_review)
+    try:
+        base_decision = _run_orchestrator(
+            target_root=target_root,
+            roles_config=roles_config,
+            task=task,
+            functional_review=functional_review,
+            human_review=human_review,
+            cycle_index=cycle_index,
+            score_history=score_history,
+            previous_state=previous_state,
+            project_goal=project_goal,
+        )
+    except (AdapterFatalError, AdapterExecutionError) as exc:
+        _finalize_adapter_failure(target_root, runtime, cycle_index, exc)
+        print(f"사이클 {cycle_index} 중단 (orchestrator LLM 실패): {exc}")
+        return 2
     decision = _apply_iteration_policy(
         base_decision,
         cycle_index=cycle_index,
@@ -598,6 +643,7 @@ def _finalize_adapter_failure(
             "last_error_class": error_class,
             "last_error_role": failed_role,
             "last_error_artifact_path": artifact_path,
+            "handoff_pause_count": 0,
         },
     )
     runtime.append_event("adapter_failed", payload)
@@ -646,46 +692,6 @@ def _run_planner(
             planner_context["previous_reviews"] = prior
         if existing_artifacts:
             planner_context["existing_artifacts"] = existing_artifacts
-        # iteration_hint는 existing_artifacts 유무 × handoff 유무 조합으로 구성한다.
-        # 핵심 메시지: "파일이 이미 존재하므로 신규 작성이 아닌 증분 수정 task를 뽑아라".
-        artifact_names = (
-            ", ".join(a.get("path", "") for a in existing_artifacts[:5])
-            if existing_artifacts
-            else ""
-        )
-        increment_directive = (
-            f"기존 산출물이 디스크에 이미 존재합니다: {artifact_names}. "
-            "이 파일들을 처음부터 다시 쓰지 말고, 이전 리뷰에서 지적된 부분만 증분으로 "
-            "수정하는 task를 뽑아주세요. task title은 `<파일명> 증분 수정` 또는 "
-            "`<파일명> 부분 개선` 형태로, task action에는 어느 섹션을 어떻게 바꿀지 "
-            "구체적으로 명시해야 합니다."
-            if existing_artifacts
-            else ""
-        )
-        if prior and "handoff" in prior and existing_artifacts:
-            planner_context["iteration_hint"] = (
-                "이 사이클은 Codex App handoff 이후 재개되는 이터레이션입니다. "
-                "previous_reviews.handoff 블록이 최상위 판단이고, findings / "
-                "recommended_next_action 을 우선 반영하세요. "
-                + increment_directive
-            )
-        elif prior and "handoff" in prior:
-            planner_context["iteration_hint"] = (
-                "이 사이클은 Codex App handoff 이후 재개되는 이터레이션입니다. "
-                "previous_reviews.handoff 블록이 최상위 판단이고, findings / "
-                "recommended_next_action 을 우선 반영하세요."
-            )
-        elif existing_artifacts:
-            planner_context["iteration_hint"] = (
-                "이 사이클은 직전 리뷰가 통과하지 못해 재시도하는 이터레이션입니다. "
-                + increment_directive
-            )
-        elif prior:
-            planner_context["iteration_hint"] = (
-                "이 사이클은 직전 리뷰가 통과하지 못해 재시도하는 이터레이션입니다. "
-                "previous_reviews의 findings를 반영해 다음 task를 다듬어주세요 — "
-                "직전과 동일한 task를 그대로 반복하지 마세요."
-            )
     adapter = _build_adapter(roles_config.get("planner", "claude_cli"))
     result = adapter.invoke(
         Invocation(
@@ -745,6 +751,30 @@ def _run_planner(
     return active_task
 
 
+def _stringify_findings(items: object) -> list[str]:
+    """Render a finding list as human-readable strings.
+
+    Dict entries are flattened to `key=value; key=value` so downstream
+    consumers (HandoffRequest.blocked_by, planner context snippets) do not
+    see raw Python dict repr (``{'file': 'a', 'reason': 'b'}``).
+    """
+    if not isinstance(items, list):
+        return []
+    lines: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            parts = [f"{k}={v}" for k, v in item.items() if v not in (None, "", [])]
+            if parts:
+                lines.append("; ".join(parts))
+        elif item is None:
+            continue
+        else:
+            text = str(item).strip()
+            if text:
+                lines.append(text)
+    return lines
+
+
 def _collect_previous_reviews(runtime: RuntimeStore) -> dict[str, object]:
     """Build a compact summary of the most recent functional/human/handoff reviews.
 
@@ -774,11 +804,18 @@ def _collect_previous_reviews(runtime: RuntimeStore) -> dict[str, object]:
         }
     handoff_review = runtime.read_json("reviews/handoff_latest.json", {})
     if isinstance(handoff_review, dict) and handoff_review.get("result"):
+        # Shape aligned with functional/human: {result, score, summary, findings,
+        # suggested_actions}. handoff produces no numeric score so it is kept as
+        # None for parity. handoff-specific fields (recommended_next_action,
+        # remaining_risks, decision_note) remain alongside.
+        recommended = handoff_review.get("recommended_next_action", "")
         summary["handoff"] = {
             "result": handoff_review.get("result"),
+            "score": None,
             "summary": handoff_review.get("summary", ""),
             "findings": handoff_review.get("findings", []),
-            "recommended_next_action": handoff_review.get("recommended_next_action", ""),
+            "suggested_actions": [recommended] if recommended else [],
+            "recommended_next_action": recommended,
             "remaining_risks": handoff_review.get("remaining_risks", []),
             "decision_note": handoff_review.get("decision_note", ""),
         }
@@ -1052,43 +1089,69 @@ def _is_stagnating(
     return not (functional_improved or human_improved)
 
 
-def _orchestrator_decision(
-    common_policy: dict[str, object],
+_DECISION_TO_STATE = {
+    "complete_cycle": EngineState.COMPLETED.value,
+    "needs_iteration": EngineState.ITERATING.value,
+    "blocked": EngineState.BLOCKED.value,
+}
+
+
+def _run_orchestrator(
+    *,
+    target_root: Path,
+    roles_config: dict[str, object],
+    task: dict[str, object],
     functional_review: dict[str, object],
     human_review: dict[str, object],
+    cycle_index: int,
+    score_history: list[dict[str, object]],
+    previous_state: str,
+    project_goal: str,
 ) -> dict[str, object]:
-    thresholds = common_policy.get("scoring", {}).get("thresholds", {})
-    functional_pass = float(thresholds.get("functional_pass", 0.7))
-    human_pass = float(thresholds.get("human_pass", 0.7))
-    functional_result = functional_review.get("result")
-    human_result = human_review.get("result")
-    functional_score = float(functional_review.get("score", 0.0))
-    human_score = float(human_review.get("score", 0.0))
+    """Invoke the Orchestrator LLM to judge this cycle's outcome.
 
-    function_ok = functional_result == "pass" and functional_score >= functional_pass
-    human_ok = human_result == "pass" and human_score >= human_pass
-    if function_ok and human_ok:
-        return {
-            "decision": "complete_cycle",
-            "next_state": EngineState.COMPLETED.value,
-            "reason": "두 리뷰 모두 합격 기준을 통과했습니다.",
-        }
-
-    # 리뷰가 명시적으로 `block`을 반환하면 하드 스톱. 운영자 개입 없이
-    # 다시 사이클을 돌리는 건 의미가 없다.
-    if functional_result == "block" or human_result == "block":
-        return {
-            "decision": "blocked",
-            "next_state": EngineState.BLOCKED.value,
-            "reason": "리뷰어 중 한 명이 result=block을 반환했습니다.",
-        }
-
-    # 그 외 리뷰 결과 (fail / needs_iteration / 낮은 점수)는 재시도 가능.
-    # 다음 사이클에 planner를 다시 돌린다.
+    The orchestrator decides complete_cycle / needs_iteration / blocked by
+    weighing the objective against verifier reviews, suggested_actions, and
+    score history. No rule-based fallback: if the LLM call fails or returns
+    an invalid payload, the caller treats the cycle as blocked per the
+    orchestration project philosophy (LLM-native feedback loop).
+    """
+    orchestrator_context: dict[str, object] = {
+        "cycle": cycle_index,
+        "previous_state": previous_state,
+        "active_task": task,
+        "functional_review": functional_review,
+        "human_review": human_review,
+        "score_history": score_history,
+    }
+    adapter = _build_adapter(str(roles_config.get("orchestrator", "codex_cli")))
+    result = adapter.invoke(
+        Invocation(
+            role="orchestrator",
+            objective=project_goal,
+            working_directory=str(target_root),
+            context=orchestrator_context,
+        )
+    )
+    payload = result.payload or {}
+    decision = str(payload.get("decision") or "").strip()
+    next_state = str(payload.get("next_state") or "").strip()
+    if decision not in _DECISION_TO_STATE:
+        raise AdapterExecutionError(
+            f"Orchestrator LLM returned unknown decision: {decision!r}"
+        )
+    expected_state = _DECISION_TO_STATE[decision]
+    # Trust the schema-enforced enum, but normalize if the LLM emitted a
+    # state token that does not match its own decision — decision is the
+    # authoritative field for downstream routing.
+    if next_state != expected_state:
+        next_state = expected_state
     return {
-        "decision": "needs_iteration",
-        "next_state": EngineState.ITERATING.value,
-        "reason": "리뷰 점수가 기준 이하 — 다음 사이클에 재계획.",
+        "decision": decision,
+        "next_state": next_state,
+        "reason": str(payload.get("reason") or ""),
+        "unresolved_items": [str(item) for item in (payload.get("unresolved_items") or [])],
+        "recommended_next_action": str(payload.get("recommended_next_action") or ""),
     }
 
 
@@ -1148,19 +1211,26 @@ def _finalize_cycle(
         }
     )
     history = history[-12:]  # keep the tail; stagnation check only needs the last entry
-    runtime.write_json(
-        "runtime/session.json",
-        {
-            **session,
-            "state": decision["next_state"],
-            "active_role": None,
-            "cycle": cycle_index,
-            "last_decision": decision["decision"],
-            "last_decision_reason": decision.get("reason", ""),
-            "next_role_hint": dispatcher.next_role(EngineState(decision["next_state"])),
-            "score_history": history,
-        },
+    next_state = decision["next_state"]
+    is_terminal = next_state in (
+        EngineState.COMPLETED.value,
+        EngineState.BLOCKED.value,
     )
+    session_update: dict[str, object] = {
+        **session,
+        "state": next_state,
+        "active_role": None,
+        "cycle": cycle_index,
+        "last_decision": decision["decision"],
+        "last_decision_reason": decision.get("reason", ""),
+        "next_role_hint": dispatcher.next_role(EngineState(next_state)),
+        "score_history": history,
+    }
+    if is_terminal:
+        # Terminal cycles clear the handoff-pause counter so a later resume
+        # cycle does not inherit stale pause accounting from a prior run.
+        session_update["handoff_pause_count"] = 0
+    runtime.write_json("runtime/session.json", session_update)
     _write_text(
         target_root / ".orch" / "reports" / "cycle-summary.md",
         (
@@ -1249,11 +1319,7 @@ def _pause_for_human_handoff(
     functional_findings = (
         functional_review.get("findings", []) if isinstance(functional_review, dict) else []
     )
-    findings_list = (
-        [str(item) for item in functional_findings]
-        if isinstance(functional_findings, list)
-        else []
-    )
+    findings_list = _stringify_findings(functional_findings)
 
     request = HandoffRequest(
         project_id=project_id,
@@ -1455,16 +1521,19 @@ def run_handoff_ingest(args: argparse.Namespace) -> int:
         )
     else:
         runtime.write_json("reviews/handoff_latest.json", {})
-    runtime.write_json(
-        "runtime/session.json",
-        {
-            **session,
-            "state": decision["next_state"],
-            "active_role": None,
-            "last_decision": decision["decision"],
-            "last_decision_reason": str(response.get("summary") or ""),
-        },
-    )
+    session_update: dict[str, object] = {
+        **session,
+        "state": decision["next_state"],
+        "active_role": None,
+        "last_decision": decision["decision"],
+        "last_decision_reason": str(response.get("summary") or ""),
+    }
+    if decision["next_state"] in (
+        EngineState.COMPLETED.value,
+        EngineState.BLOCKED.value,
+    ):
+        session_update["handoff_pause_count"] = 0
+    runtime.write_json("runtime/session.json", session_update)
     manager.acknowledge_resume()
     print(f"handoff 수용 완료. result={response.get('result')} -> 다음 상태={decision['next_state']}")
     recommended = response.get("recommended_next_action")

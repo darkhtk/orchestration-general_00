@@ -134,6 +134,36 @@ class ScriptedAdapter(BaseAdapter):
                     "suggested_actions": [],
                 },
             )
+        if self.role == "orchestrator":
+            # Test scenarios may override orchestrator judgment explicitly via
+            # `orchestrator_decision` / `orchestrator_next_state` / `orchestrator_unresolved`.
+            # Otherwise we derive a sensible default from the verifier `result` field so
+            # existing regression plans keep behaving identically once the engine starts
+            # routing through an LLM orchestrator.
+            result = str(entry.get("result", "pass")).lower()
+            derived = {
+                "pass": ("complete_cycle", "completed"),
+                "needs_iteration": ("needs_iteration", "iterating"),
+                "fail": ("needs_iteration", "iterating"),
+                "block": ("blocked", "blocked"),
+            }.get(result, ("needs_iteration", "iterating"))
+            decision = str(entry.get("orchestrator_decision", derived[0]))
+            next_state = str(entry.get("orchestrator_next_state", derived[1]))
+            unresolved = entry.get("orchestrator_unresolved", [])
+            if not isinstance(unresolved, list):
+                unresolved = []
+            return InvocationResult(
+                status="ok",
+                summary="scripted orchestrator judgment",
+                payload={
+                    "summary": "scripted orchestrator judgment",
+                    "decision": decision,
+                    "next_state": next_state,
+                    "reason": str(entry.get("orchestrator_reason", f"scripted: derived from result={result}")),
+                    "unresolved_items": [str(item) for item in unresolved],
+                    "recommended_next_action": str(entry.get("orchestrator_recommendation", "")),
+                },
+            )
         raise ValueError(f"Unsupported role: {self.role}")
 
 
@@ -180,6 +210,7 @@ def _install_scripted_adapters(plan: list[dict[str, Any]]) -> dict[str, Scripted
         "builder": ScriptedAdapter("builder", plan),
         "verifier_functional": ScriptedAdapter("verifier_functional", plan),
         "verifier_human": ScriptedAdapter("verifier_human", plan),
+        "orchestrator": ScriptedAdapter("orchestrator", plan),
     }
 
     def fake_build_adapter(_name: str, *, adapters=adapters, _state: dict[str, str] = {"current": "planner"}):
@@ -203,6 +234,7 @@ def _install_scripted_adapters(plan: list[dict[str, Any]]) -> dict[str, Scripted
                     "_run_planner": "planner",
                     "_run_builder": "builder",
                     "_run_verifier": None,  # resolved below
+                    "_run_orchestrator": "orchestrator",
                 }
                 if fn_name in role_map and role_map[fn_name]:
                     return adapters[role_map[fn_name]]
@@ -414,6 +446,14 @@ def _scenario_handoff_mode_pauses_cycle(sandbox: Path) -> ScenarioResult:
             False,
             f"state after ingest={session_after.get('state')} != completed",
         )
+    # C-4 guard: terminal ingest must clear handoff_pause_count so a later
+    # resume cycle does not inherit stale pause accounting.
+    if int(session_after.get("handoff_pause_count", -1) or 0) != 0:
+        return ScenarioResult(
+            "handoff_mode_pauses_cycle",
+            False,
+            f"handoff_pause_count={session_after.get('handoff_pause_count')} != 0 after terminal ingest",
+        )
     return ScenarioResult(
         "handoff_mode_pauses_cycle",
         True,
@@ -500,17 +540,10 @@ def _scenario_handoff_feedback_reaches_planner(sandbox: Path) -> ScenarioResult:
             False,
             f"handoff recommended_next_action missing: {handoff_block.get('recommended_next_action')}",
         )
-    hint = str(ctx.get("iteration_hint", ""))
-    if "handoff" not in hint.lower():
-        return ScenarioResult(
-            "handoff_feedback_reaches_planner",
-            False,
-            f"iteration_hint did not mention handoff: {hint!r}",
-        )
     return ScenarioResult(
         "handoff_feedback_reaches_planner",
         True,
-        "planner received previous_reviews.handoff + handoff-aware iteration_hint",
+        "planner received previous_reviews.handoff",
     )
 
 
@@ -750,8 +783,68 @@ def _scenario_terminal_handoff_clears_feedback(sandbox: Path) -> ScenarioResult:
     )
 
 
+def _scenario_needs_iteration_then_success(sandbox: Path) -> ScenarioResult:
+    """Cycle 1 fails naturally (needs_iteration) and cycle 2 recovers to pass.
+
+    C-1 regression for the organic iteration path: verify the engine does
+    NOT jump to a terminal decision after a single low-score cycle, and that
+    a follow-up cycle with improved scores closes it out cleanly.
+    """
+    target = sandbox / "needs-iter-then-success"
+    _init_project(target, limits_override={"max_cycles": 5, "stop_on_stagnation": False})
+    _install_scripted_adapters(
+        [
+            {"functional": 0.4, "human": 0.4, "result": "needs_iteration"},
+            {"functional": 0.9, "human": 0.9, "result": "pass"},
+        ]
+    )
+    if _run_cycle(target) != 0:
+        return ScenarioResult("needs_iteration_then_success", False, "cycle1 rc!=0")
+    s1 = _read_session(target)
+    if s1.get("state") != "iterating":
+        return ScenarioResult(
+            "needs_iteration_then_success",
+            False,
+            f"cycle1 state={s1.get('state')} != iterating",
+        )
+    if s1.get("last_decision") != "needs_iteration":
+        return ScenarioResult(
+            "needs_iteration_then_success",
+            False,
+            f"cycle1 decision={s1.get('last_decision')} != needs_iteration",
+        )
+    if _run_cycle(target) != 0:
+        return ScenarioResult("needs_iteration_then_success", False, "cycle2 rc!=0")
+    s2 = _read_session(target)
+    if s2.get("state") != "completed":
+        return ScenarioResult(
+            "needs_iteration_then_success",
+            False,
+            f"cycle2 state={s2.get('state')} != completed",
+        )
+    if s2.get("last_decision") != "complete_cycle":
+        return ScenarioResult(
+            "needs_iteration_then_success",
+            False,
+            f"cycle2 decision={s2.get('last_decision')} != complete_cycle",
+        )
+    history = s2.get("score_history", [])
+    if len(history) != 2:
+        return ScenarioResult(
+            "needs_iteration_then_success",
+            False,
+            f"expected 2 history entries, got {len(history)}",
+        )
+    return ScenarioResult(
+        "needs_iteration_then_success",
+        True,
+        "cycle1 needs_iteration -> cycle2 complete_cycle with 2 history entries",
+    )
+
+
 SCENARIOS: dict[str, Callable[[Path], ScenarioResult]] = {
     "complete_on_first_cycle": _scenario_complete_on_first_cycle,
+    "needs_iteration_then_success": _scenario_needs_iteration_then_success,
     "max_cycles_reached": _scenario_max_cycles_reached,
     "stagnation_detected": _scenario_stagnation_detected,
     "handoff_mode_pauses_cycle": _scenario_handoff_mode_pauses_cycle,

@@ -13,6 +13,7 @@ ROLE_SCHEMA_MAP = {
     "builder": ENGINE_ROOT / "schemas" / "roles" / "builder.result.v1.json",
     "verifier_functional": ENGINE_ROOT / "schemas" / "roles" / "verifier_functional.result.v1.json",
     "verifier_human": ENGINE_ROOT / "schemas" / "roles" / "verifier_human.result.v1.json",
+    "orchestrator": ENGINE_ROOT / "schemas" / "roles" / "orchestrator.result.v1.json",
 }
 
 
@@ -47,13 +48,13 @@ def main() -> int:
     args = parse_args()
     role_arg = args.role
     if role_arg == "all":
-        roles = ["planner", "builder", "verifier_functional", "verifier_human"]
+        roles = ["planner", "builder", "verifier_functional", "verifier_human", "orchestrator"]
     elif role_arg in ROLE_SCHEMA_MAP:
         roles = [role_arg]
     else:
         raise SystemExit(
             f"Unknown role: {role_arg}. Choose one of "
-            "[planner, builder, verifier_functional, verifier_human, all]."
+            f"[{', '.join(ROLE_SCHEMA_MAP.keys())}, all]."
         )
 
     rc = 0
@@ -165,6 +166,7 @@ def _default_timeout(role: str) -> int:
         "builder": 600,
         "verifier_functional": 300,
         "verifier_human": 240,
+        "orchestrator": 120,
     }[role]
 
 

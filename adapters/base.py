@@ -23,12 +23,14 @@ ROLE_SCHEMA_MAP = {
     "builder": ENGINE_ROOT / "schemas" / "roles" / "builder.result.v1.json",
     "verifier_functional": ENGINE_ROOT / "schemas" / "roles" / "verifier_functional.result.v1.json",
     "verifier_human": ENGINE_ROOT / "schemas" / "roles" / "verifier_human.result.v1.json",
+    "orchestrator": ENGINE_ROOT / "schemas" / "roles" / "orchestrator.result.v1.json",
 }
 ROLE_TIMEOUTS = {
     "planner": 180,
     "builder": 600,
     "verifier_functional": 300,
     "verifier_human": 240,
+    "orchestrator": 120,
 }
 
 
@@ -264,12 +266,21 @@ def _render_prompt(invocation: Invocation, schema_path: Path, required_keys: lis
         "builder": "Do the actual work in the working directory before you return JSON.",
         "verifier_functional": "Verify using concrete evidence such as commands, tests, logs, or produced files whenever possible.",
         "verifier_human": "Review from a human perspective and focus on quality, clarity, polish, and usability.",
+        "orchestrator": (
+            "Decide whether this cycle is complete, should iterate, or is blocked. "
+            "Weigh the original objective against the verifier reviews, suggested_actions, blocking_issues, "
+            "and score_history supplied in context. The objective is the master mandate — a cycle is complete "
+            "only when the objective is truly satisfied, not merely when scores exceed a threshold. If any "
+            "suggested_actions remain actionable, prefer needs_iteration. Use blocked only when the reviews "
+            "explicitly declare a hard stop or the same failure has repeated without progress."
+        ),
     }[invocation.role]
     scope_guidance = {
         "planner": "Do not modify files.",
         "builder": "Modify only files necessary for the objective and keep the change scope tight.",
         "verifier_functional": "Avoid editing project files unless a verification step requires generated test artifacts.",
         "verifier_human": "Do not modify files during review.",
+        "orchestrator": "Do not modify files. You are a judgment-only role.",
     }[invocation.role]
     return (
         f"You are running as orch-engine role '{invocation.role}'.\n"
@@ -503,6 +514,27 @@ def _normalize_role_payload(role: str, payload: dict[str, Any]) -> dict[str, Any
             "strengths": _ensure_string_list(payload.get("strengths")),
             "comparison_notes": _ensure_string_list(payload.get("comparison_notes") or payload.get("comparisons")),
             "suggested_actions": _ensure_string_list(payload.get("suggested_actions") or payload.get("recommendations") or payload.get("next_actions")),
+        }
+
+    if role == "orchestrator":
+        decision = str(payload.get("decision") or payload.get("verdict") or "").strip()
+        next_state = str(payload.get("next_state") or payload.get("state") or "").strip()
+        return {
+            "summary": str(payload.get("summary") or payload.get("rationale") or "Orchestrator judged the cycle."),
+            "decision": decision,
+            "next_state": next_state,
+            "reason": str(payload.get("reason") or payload.get("rationale") or payload.get("summary") or ""),
+            "unresolved_items": _ensure_string_list(
+                payload.get("unresolved_items")
+                or payload.get("unresolved")
+                or payload.get("remaining_issues")
+            ),
+            "recommended_next_action": str(
+                payload.get("recommended_next_action")
+                or payload.get("next_action")
+                or payload.get("recommendation")
+                or ""
+            ),
         }
 
     return payload
